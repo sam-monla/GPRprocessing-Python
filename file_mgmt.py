@@ -9,7 +9,7 @@ from readgssi import readgssi
 import laspy
 from pyproj import Proj, transform
 
-def readDZT(file, timezero):
+def readDZT(file, timezero=[2]):
     """
     INPUT:
     file: File location ("C:\Files\GPR.DZT")
