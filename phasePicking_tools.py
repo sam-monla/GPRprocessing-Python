@@ -16,6 +16,7 @@ Based on the work of Matteo Dossi, Emanuele Forte and Michele Pipan:
 import numpy as np
 from itertools import groupby
 from operator import itemgetter
+from tqdm import tqdm
 
 def quad_trace(data):
     """
@@ -115,5 +116,146 @@ def Ctwt_matrix(cosph_data):
     twtij_mat = np.concatenate((row1_twt,twtij_mat),axis=0)
 
     return twtij_mat, Cij_mat
+
+def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
+    """
+    Function for the automatic picking of horizons in GPR data. For a given trace, one of it's sample can be tied to a sample of a neighboring trace if the following conditions are met:
+    1. Same polarity
+    2. Temporal proximity
+    3. 2 phases can't cross
+    See < Automated reflection picking and polarity assessment through attribute analysis: Theory application to synthetic and real ground-penetrating radar data > for more details.
+
+    INPUT:
+    - Cij: Cij matrix
+    - twtij: twtij matrix
+    - Tph: Approx. period of one phase (in samples). The temporal width of the air wave's phase is a good 1st approx. 
+    - tol_C: Number between 0 and 1 to filter amplitudes that are too low (far from -1 or +1) in the Cij matrix. Example: 0.7 -> Every amplitude higher/lower than +/- 1 are kept.
+    - tolmin_t: Number between 0 and 1 to filter phases that are too short. Example: 0.5 -> Every phases longer than 0.5*Tph are kept.
+    - tolmax_t: Number between 0 and 1 to filter phases that are too long. (tolmax_t*Tph is the cutoff)
+    - h_offset: Shift the traces horizontally. For example, if you want to pick horizons starting at the 100th trace, set this parameter to 100.
+    - min_time: Integer to filter every phase that comes before sample no. min_time (default=6)
+
+    OUTPUT:
+    - list_horizons: List of lists. Each sublist is an horizon. Each element of an horizon is a tuple of the form (sample,trace).
+    - list_horizons_offs: Same as list_horizons, but the traces are shifted horizontally depending on the parameter h_offset. 
+    - Cij_clone: A copy of the original Cij matrix
+    - twtij_clone: A copy of the original twtij matrix
+    """
+    # Copy of the original Cij and twtij matrix for later use
+    twtij_clone = np.copy(twtij)
+    Cij_clone = np.copy(Cij)
+
+    # Filters phases that are too long or too short
+    # Calculates the differences between to rows in the twtij matrix for each trace -> gets their length
+    diff_twt = np.diff(twtij,axis=0) 
+    # Finds the problematic phases
+    bad_phase = np.argwhere((diff_twt < 0) | (diff_twt < tolmin_t*Tph) | (diff_twt > tolmax_t*Tph))
+    if len(bad_phase)>0:
+        # Replaces bad phases with 2 in the Cij matrix (impossible value)
+        f1_Cij = 2*np.ones((1,len(bad_phase)))
+        # Replace bad phases with -1 in the twtij matrix (impossible value)
+        f1_twtij = -1*np.ones((1,len(bad_phase)))
+        # Gets the 2D indexes of each bad phase and asign the impossible values in the appropriate matrix 
+        row, cols = zip(*bad_phase)
+        Cij[row,cols] = f1_Cij
+        twtij[row,cols] = f1_twtij
+    
+    # Filters phases that are too early
+    early_phase = np.argwhere(twtij <= min_time)
+    if len(early_phase)>0:
+        # Impossible values for Cij matrix
+        f1b_Cij = 2*np.ones((1,len(early_phase)))
+        # Impossible values for twtij matrix
+        f1b_twtij = -1*np.ones((1,len(early_phase)))
+        row, cols = zip(*early_phase)
+        Cij[row,cols] = f1b_Cij
+        twtij[row,cols] = f1b_twtij
+
+    # Filtrers weak amplitudes
+    bad_amp = np.argwhere(np.abs(Cij) < tol_C)
+    if len(bad_amp)>0:
+        f2_Cij = 2*np.ones((1,len(bad_amp)))
+        f2_twtij = -1*np.ones((1,len(bad_amp)))
+        row, cols = zip(*bad_amp)
+        Cij[row,cols] = f2_Cij
+        twtij[row,cols] = f2_twtij
+
+    # Final horizons lists initialization
+    list_horizons = []
+    list_horizons_offs = []
+
+    # For each phase (tqdm is to display progress bar)
+    for ph in tqdm(range(Cij.shape[0])):
+        # For each trace
+        for tr in range(twtij.shape[1]):
+            # Verify if amplitude and time are valid at this position. If not, we pass to the next trace
+            if (Cij[ph,tr] == 2) or (twtij[ph,tr] == -1):
+                    continue
+            
+            # Horizon initialization
+            hori = [(ph,tr)]
+            hori_offs = [(ph,tr+h_offset)]
+
+            # Can we extend the horizon?
+            # Make sur we are not at the end of the matrix
+            if hori[-1][1] < Cij.shape[1]-1:
+                # Can we extend with the trace to the right?
+                # Checking for polarity matching
+                signe = np.sign(Cij[ph,tr])
+                if signe < 0:
+                    crit1 = Cij[:,tr+1] < 0
+                else:
+                    crit1 = (Cij[:,tr+1] > 0) & (Cij[:,tr+1] <= 1)
+                # Checking for temporal proximity
+                crit2 = (twtij[:,tr+1] > (twtij[ph,tr]-Tph/2)) & (twtij[:,tr+1] < (twtij[ph,tr]+Tph/2)) & (twtij[:,tr+1] >= 0)
+                # Mixing the criterias
+                crits_prol = crit1 & crit2
+
+                # Create a "trace" variable to continue iterating while memorizing the current trace of the main loop
+                trace = tr
+                # Check if an extension is possible to the right of hori. Repeat the process until crit1 or crit2 is not met, or when we arrive at the far right of the matrix.
+                while (np.any(crits_prol)) and (hori[-1][1] < Cij.shape[1]-1):
+                    hori_extens = np.argwhere(crits_prol == True)
+                    hori_extens = np.asarray(hori_extens).reshape((1,len(hori_extens)))[0]
+
+                    # If more than 1 extension is possible
+                    if len(hori_extens) > 1:
+                        diff = []
+                        for i in range(len(hori_extens)):
+                            diff.append(np.abs(hori_extens[i]-hori[-1][0]))
+                        # Chooses the closest one sample wise
+                        pos_min = np.where(diff == np.min(diff))
+                        hori.append((hori_extens[pos_min[0][0]],trace+1))
+                        hori_offs.append((hori_extens[pos_min[0][0]],trace+1+h_offset))
+                    else:
+                        # Extends hori if there is just 1 extension possible
+                        hori.append((hori_extens[0],trace+1))
+                        hori_offs.append((hori_extens[0],trace+1+h_offset))
+
+                    # Check in the next trace to the right if an other extension is possible
+                    trace += 1
+                    # Check the polarity and temporal proximity criterias
+                    if hori[-1][1] == Cij.shape[1]-1:
+                        break
+                    elif signe < 0:
+                        crit1 = Cij[:,hori[-1][1]+1] < 0 
+                    else:
+                        crit1 = Cij[:,hori[-1][1]+1] > 0
+                    time_ref = twtij[hori[-1][0],hori[-1][1]]
+                    crit2 = (twtij[:,hori[-1][1]+1] > (time_ref-Tph/2)) & (twtij[:,hori[-1][1]+1] < (time_ref+Tph/2)) & (twtij[:,hori[-1][1]+1] >= 0)
+                    crits_prol = crit1 & crit2
+                    # If the criterias are met again, the while loop is repeated
+
+            # When the while loop breaks, the resulting horizon is put in list_horizons
+            list_horizons.append(hori)
+            list_horizons_offs.append(hori_offs)
+            # Puts impossible values in the spots that are tied to an horizon. This way, the algorithm can't put a spot in 2 different horizons and there is less point to examine. 
+            Cij_term = 2*np.ones((1,len(hori)))
+            twtij_term = -1*np.ones((1,len(hori)))
+            row, cols = zip(*hori)
+            Cij[row,cols] = Cij_term
+            twtij[row,cols] = twtij_term
+
+    return list_horizons, list_horizons_offs, Cij_clone, twtij_clone
 
 
