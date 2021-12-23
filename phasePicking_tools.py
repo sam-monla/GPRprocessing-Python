@@ -258,4 +258,394 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
 
     return list_horizons, list_horizons_offs, Cij_clone, twtij_clone
 
+def horijoin(horizons,Cij_clone,twtij_clone,section,Lg=False,Tj=False):
+    """
+    Function that takes the output of the function horipick and joins close horizons together following some conditions.
+    1. Same polarity
+    2. Spatial proximity
+    3. Temporal proximity
+    4. A new jonction can't cross an existing horizon
+    See < Automated reflection picking and polarity assessment through attribute analysis: Theory application to synthetic and real ground-penetrating radar data > for more details.
 
+    INPUT:
+    - horizons: List of lists -> The output of horipick
+    - Cij_clone: The original Cij matrix
+    - twtij: The original twtij matrix
+    - section: The portion of the original matrix in wich the horizons are picked
+    - Lg: The maximum horizontal (trace) spacing between 2 horizons that can be joined
+    - Tj: The maximum vertical (sample) spacing between 2 horizons that can be joined
+
+    OUTPUT:
+    - new_horizons: List of lists -> Same output as horipick, but some horizons are joined together. There should be less horizons.
+    - new_horizons_t: Same as new_horizons, but the samples are replaced by time.
+    - signs_list: List of lists -> Gives the polarity of each horizons
+    """
+    # Sorts horizons by their trace
+    horizons_tri = sorted(horizons, key=lambda x: x[0][1])
+
+    # horizons_tri lists every position of the original data matrix that is now part of an horizon. Here, we retrieve the values of Cij and twtij that are associated with these positions.
+    # cos_hori -> Values of Cij associated to the positions in horizons_tri
+    # time_hori -> Values of twtij associated to the positions in horizons_tri
+    cos_hori = []
+    time_hori = []
+    for hori in horizons_tri:
+        row, cols = zip(*hori)
+        cos = Cij_clone[row,cols].tolist()
+        time = twtij_clone[row,cols].tolist()
+        cos_hori.append(cos)
+        time_hori.append(list(zip(time,cols)))
+        # Sorts time_hori to be sure everything is in the right order
+        time_hori = sorted(time_hori, key=lambda x: x[0][1])
+    # Copy the original cos_hori and time_hori for later use
+    cos_hori_clone = np.copy(cos_hori)
+    time_hori_clone = np.copy(time_hori)
+
+    # Check if every horizons contain elements of same sign
+    for hori in cos_hori:
+        if np.all(np.asarray(hori) > 0):
+            continue
+        elif np.all(np.asarray(hori) < 0):
+            continue
+        else:
+            ind = cos_hori.index(hori)
+            print("Horizon {} contains elements of opposed signs".format(ind))
+            break
+    
+    # Output lists initialization
+    new_horizons = []
+    new_horizons_t = []
+    signs_list = []
+    # Initialization of a list containing every elements or horizons that can't be joined to an existing horizon
+    blacklist = []
+
+    # For each horizon
+    for horizon in tqdm(range(len(horizons_tri))):
+
+        # Check if the current horizon is blacklisted. If so, pass to the next.
+        if (horizon in blacklist):
+            continue
+
+        # Check criteria 1 - Same polarity
+        # Initialization of a list containing only bool values to check criteria 1
+        cos_bool = np.copy(cos_hori)
+        # Finds the current horizon sign
+        signe = np.sign(cos_hori[horizon][0])
+        if signe > 0:
+            for j in range(len(cos_hori)):
+                # Marks with "True" every horizon of same polarity, containing no 2 (impossible value) amplitude and that are not blacklisted
+                if (np.all(np.asarray(cos_hori[j]) > 0)) and (np.all(np.asarray(cos_hori[j]) <= 1)) and (j not in blacklist):
+                    cos_bool[j] = True
+                else:
+                    cos_bool[j] = False
+        if signe < 0:
+            # Same for horizons of negative polarity
+            for k in range(len(cos_hori)):
+                if (np.all(np.asarray(cos_hori[k]) < 0)) and (k not in blacklist):
+                    cos_bool[k] = True
+                else:
+                    cos_bool[k] = False
+
+        # Checks criteria 2 (Temporal/vertical proximity)
+        # Gets the first and last traces of the current horizon
+        start = time_hori[horizon][0][1]
+        end = time_hori[horizon][-1][1]
+        # Gets the samples of the first and last elements of the current horizon
+        tstart = time_hori[horizon][0][0]
+        tend = time_hori[horizon][-1][0]
+        # Initialization of a list containing only bool values to check criteria 2
+        time_bool = np.copy(time_hori)
+        for i in range(len(time_hori)):
+            # Marks "True" every horizons that ends horizontally before the current horizon (to the left), that are close vertically (Tj) and that are not blacklisted
+            if (time_hori[i][-1][1]<start) and (tstart-(Tj)<=time_hori[i][-1][0]<=tstart+(Tj)) and (i not in blacklist):
+                time_bool[i] = True
+            # Marks "True" every horizons that starts horizontally after the current horizon (to the right), that are close vertically (Tj) and that are not blacklisted
+            elif (time_hori[i][0][1]>end) and (tend-(Tj)<=time_hori[i][0][0]<=tend+(Tj)) and (i not in blacklist):
+                time_bool[i] = True
+            else:
+                time_bool[i] = False
+        
+        # Checks criteria 3 (spatial proximity)
+        # Initialization of a list containing only bool values to check criteria 3
+        separ_bool = np.copy(time_hori)
+        for i in range(len(time_hori)):
+            # Marks "True" every horizon that ends horizontally before the current horizon (to the left), that are close horizontally (Lg) and that are not blacklisted.
+            if (time_hori[i][-1][1]<start) and (time_hori[i][-1][1]>=start-Lg) and (i not in blacklist):
+                separ_bool[i] = True
+            # Marks "True" every horizon that starts horizontally after the current horizon (to the right), that are close horizontally (Lg) and that are not blacklisted.
+            elif (time_hori[i][0][1]>end) and (time_hori[i][0][1]<=end+Lg) and (i not in blacklist):
+                separ_bool[i] = True
+            else:
+                separ_bool[i] = False
+        
+        # Combines criterias 1, 2, 3
+        crit_prol = cos_bool & time_bool & separ_bool
+
+        # Initialization of lists that combines 1 or more horizons
+        hori_combine = horizons_tri[horizon]
+        hori_combine_t = time_hori[horizon]
+        # Initialization of lists containing possible jonctions
+        list_left = []
+        list_right = []
+
+        # Loop to extend the current horizon, now placed in hori_combine
+        # The loop is enterred only if crit_prol has a True value. If not, we pass to the next horizon and no jonctions are made.
+        while np.any(crit_prol):
+            # Finds index of potential horizons that can be joined to the current one
+            ind_prol = np.where(cos_bool & time_bool & separ_bool)[0]
+            if len(ind_prol) == 0:
+                continue
+            # List of the potential horizons to the left of the current one
+            pre_left = ind_prol[ind_prol < horizon]
+            # List of the potential horizons to the right of the current one
+            pre_right = ind_prol[ind_prol > horizon]
+
+            # Checks criteria 4 - Crossing existing horizons
+            # Left
+            # Initialization of the final list to the left of the current horizon
+            left = []
+            if len(pre_left) > 0:
+                #if section is None:
+                #    for i in range(len(pre_left)):
+                #        # Checks if the potential jonction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
+                #        x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
+                #        # Adds the horizons to the "left" list if no crossing
+                #        if not np.any(x_bool):
+                #                left.append(pre_left[i])
+                #else:
+                for i in range(len(pre_left)):
+                    # Checks if the potential jonction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
+                    x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
+
+                    # Adds the horizons to the "left" list if no crossing - Remove if using Phase crossing
+                    if not np.any(x_bool):
+                        left.append(pre_left[i])
+                    
+                    """"
+                    # Phase crossing - To verify
+                    ec_trace = hori_combine[0][1]-horizons_tri[pre_left[i]][-1][1]
+                    ec_samp = hori_combine[0][0]-horizons_tri[pre_left[i]][-1][0]
+                    pythg = np.sqrt(ec_trace**2 + ec_samp**2)
+                    
+                    # Verify this line    
+                    if (pythg > 52) and (ec_samp > 3):
+                        prop = cross_phase(signe,pre_left[i],hori_combine_t,time_hori,champ,direction="left")
+                        if (not np.any(x_bool)) and (prop < 0.25):
+                            left.append(pre_left[i])
+                    # Verify this
+                    elif (pythg > 152):
+                        if (not np.any(x_bool)) and (prop < 0.75):
+                            left.append(pre_left[i])
+                    else:
+                        if not np.any(x_bool):
+                            left.append(pre_left[i])
+                    """
+            # Right
+            # Initialization of the final list to the right of the current horizon
+            right = []
+            if len(pre_right) > 0:
+                #if champ is None:
+                #    for j in range(len(pre_right)):
+                #        x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,newlist_horizons_time,direction="right")
+                #        if not np.any(x_bool):
+                #                right.append(pre_right[j])
+                #else:
+                for j in range(len(pre_right)):
+                    x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="right")
+
+                    # Adds the horizons to the "right" list if no crossing - Remove if using Phase crossing
+                    if not np.any(x_bool):
+                        left.append(pre_right[i])
+
+                    """
+                    Phase crossing - To verify
+                    ec_trace = horizons_tri[pre_right[j]][0][1] - hori_combine[-1][1]
+                    ec_samp = time_hori[pre_right[j]][0][0] - hori_combine_t[-1][0]
+                    pythg = np.sqrt(ec_trace**2 + ec_samp**2)
+
+                    if (pythg > 52) and (ec_samp > 3):
+                        prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,champ,direction="right")
+                        if (not np.any(x_bool)) and (prop < 0.25):
+                            right.append(pre_right[j])
+
+                        elif (pythg > 152):
+                            prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,champ,direction="right")
+                            if (not np.any(x_bool)) and (prop < 0.75):
+                                right.append(pre_right[j])
+
+                        else:
+                            if not np.any(x_bool):
+                                right.append(pre_right[j])
+                    """
+            # For each side, only keep the closest horizon (2 axes)
+            # Left
+            if len(left) > 1:
+                # Gets the last trace of every horizon in left
+                traces = np.asarray([horizons_tri[i][-1][1] for i in left])
+                # Gets the last sample of every horizon in left
+                times = np.asarray([time_hori[j][-1][0] for j in left])
+                # Gets the first trace of hori_combine (the current horizon we try to extend)
+                refx = hori_combine[0][1]
+                # Gets the first sample of hori_combine
+                reft = hori_combine_t[0][0]
+                # Gets the horizontal spacing between hori_combine and every horizon in left
+                difx = refx-traces
+                # Gets the vertical spacing between hori_combine and every horizon in left
+                dift = reft-times
+                # Gets the resulting spacing (Pythagore)
+                pyt = np.sqrt(difx**2 + dift**2)
+                # Picks the closest horizon
+                prox = np.where(pyt==np.min(pyt))[0]
+                left = [left[prox[0]]]
+
+            # Right
+            if len(right) > 1:
+                # Gets the first trace of every horizon in right
+                traces = np.asarray([horizons_tri[i][0][1] for i in right])
+                # Gets the first sample of every horizon in right
+                times = np.asarray([time_hori[j][0][0] for j in right])
+                # Gets the last trace of hori_combine (the current horizon we try to extend)
+                refx = hori_combine[-1][1]
+                # Gets the last sample of hori_combine
+                reft = hori_combine_t[-1][0]
+                # Gets the horizontal spacing between hori_combine and every horizon in right
+                difx = traces-refx
+                # Gets the vertical spacing between hori_combine and every horizon in right
+                dift = times-reft
+                # Gets the resulting spacing (Pythagore)
+                pyt = np.sqrt(difx**2 + dift**2)
+                # Picks the closest horizon
+                prox = np.where(pyt==np.min(pyt))[0]
+                right = [right[prox[0]]]
+
+            # Extending hori_combine
+            # Extending to the left AND to the right
+            if (len(left) == 1) and (len(right) == 1):
+                hori_combine = horizons_tri[left[0]] + hori_combine + horizons_tri[right[0]]
+                hori_combine_t = time_hori[left[0]] + hori_combine_t + time_hori[right[0]]
+                # Keeping track of left and right extension for later use
+                list_left.append(left[0])
+                list_right.append(right[0])
+            # Extending to the left only
+            elif (len(left) == 1) and (len(right) == 0):
+                hori_combine = horizons_tri[left[0]] + hori_combine
+                hori_combine_t = time_hori[left[0]] + hori_combine_t
+                # Keeping track of left extension for later use
+                list_left.append(left[0])
+            # Extending to the right only
+            elif (len(left) == 0) and (len(right) == 1):
+                hori_combine = hori_combine + horizons_tri[right[0]]
+                hori_combine_t = hori_combine_t + time_hori[right[0]]
+                # Keeping track of right extension for later use
+                list_right.append(right[0])
+            else:
+                break
+
+            # Sorts hori_combine by trace
+            hori_combine = sorted(hori_combine, key=lambda x: x[1])
+            hori_combine_t = sorted(hori_combine_t, key=lambda x: x[1])
+
+            # At this point, we check at the extremities of the currently extended horizon if we can extend it again. We therefore check the criteria 1,2,3 again. Criteria 4 will be checked for at the beginning of the next iteration of the while loop.
+
+            # Checks criteria 1,2,3
+            # Criteria 1 (Same polarity)
+            # Initialization of a list containing bool values to check criteria 1
+            cos_bool = np.copy(cos_hori)
+            if signe > 0:
+                for j in range(len(cos_hori)):
+                    # Marks with "True" every horizon of same polarity, containing no 2 (impossible value) amplitude and that are not blacklisted
+                    if (np.all(np.asarray(cos_hori[j]) > 0)) and (np.all(np.asarray(cos_hori[j]) <= 1)) and (j not in blacklist):
+                        cos_bool[j] = True
+                    else:
+                        cos_bool[j] = False
+            if signe < 0:
+                for k in range(len(cos_hori)):
+                    if (np.all(np.asarray(cos_hori[k]) < 0)) and (k not in blacklist):
+                        cos_bool[k] = True
+                    else:
+                        cos_bool[k] = False
+
+            # Criteria 2 (Temporal proximity)
+            # Gets the first and last traces of the current horizon
+            start = hori_combine[0][1]
+            end = hori_combine[-1][1]
+            # Gets the samples of the first and last elements of the current horizon
+            # If left is not empty, we can get tstart from it
+            if (len(left)==1) and (len(right)==0):
+                tstart = time_hori[left[0]][0][0]
+            # If right is not empty, we can get tend from it
+            elif (len(right)==1) and (len(left)==0):
+                tend = time_hori[right[0]][-1][0]
+            # If both are not empty,...
+            elif (len(right)==1) and (len(left)==1):
+                tstart = time_hori[left[0]][0][0]
+                tend = time_hori[right[0]][-1][0] 
+            # Initialization of a list containing only bool values to check criteria 2
+            time_bool = np.copy(time_hori)
+            for i in range(len(time_hori)):
+                # Marks "True" every horizons that ends horizontally before the current horizon (to the left), that are close vertically (Tj) and that are not blacklisted
+                if (time_hori[i][-1][1]<start) and (tstart-(Tj)<=time_hori[i][-1][0]<=tstart+(Tj)) and (i not in blacklist):
+                    time_bool[i] = True
+                # Marks "True" every horizons that starts horizontally after the current horizon (to the right), that are close vertically (Tj) and that are not blacklisted
+                elif (time_hori[i][0][1]>end) and (tend-(Tj)<=time_hori[i][0][0]<=tend+(Tj)) and (i not in blacklist):
+                    time_bool[i] = True
+                else:
+                    time_bool[i] = False
+
+            # Criteria 3 (Spatial proximity)
+            # Initialization of a list containing only bool values to check criteria 3
+            separ_bool = np.copy(time_hori)
+            for i in range(len(time_hori)):
+                # Marks "True" every horizon that ends horizontally before the current horizon (to the left), that are close horizontally (Lg) and that are not blacklisted.
+                if (time_hori[i][-1][1]<start) and (time_hori[i][-1][1]>=start-Lg) and (i not in blacklist):
+                    separ_bool[i] = True
+                # Marks "True" every horizon that starts horizontally after the current horizon (to the right), that are close horizontally (Lg) and that are not blacklisted.
+                elif (time_hori[i][0][1]>end) and (time_hori[i][0][1]<=end+Lg) and (i not in blacklist):
+                    separ_bool[i] = True
+                else:
+                    separ_bool[i] = False
+
+            # Combines criterias 1,2,3
+            crit_prol = cos_bool & time_bool & separ_bool
+            # If there are "True" in crit_prol, the while loop will iterate another time
+
+        # At this point, we are not in the while loop anymore
+        # Updates the output lists of the function
+        signs_list.append(signe)
+        new_horizons.append(hori_combine)
+        new_horizons_t.append(hori_combine_t)
+
+        # Blacklists horizons that are in hori_combine (to avoid examining them a second time)
+        # Deactivate the corresponding positions in cos_hori and time_hori
+        # If the extension is on the left only
+        if (len(list_left) > 0) and (len(list_right) == 0):
+            for m in list_left:
+                # Blacklists the extensions
+                blacklist.append(m)
+            # Blacklists the original extension
+            blacklist.append(horizon)
+        # If the extension is on the right only
+        elif (len(list_right) > 0) and (len(list_left) == 0):
+            for n in list_right:
+                # Blacklists the extensions
+                blacklist.append(n)
+            # Blacklists the original horizon
+            blacklist.append(horizon)
+        # Extensions on both sides
+        elif (len(list_left) > 0) and (len(list_right) > 0):
+            # Blacklists extensions to the left
+            for m in list_left:
+                blacklist.append(m)
+            # Blacklists extensions to the right
+            for n in list_right:
+                blacklist.append(n)
+            # Blacklists original horizon
+            blacklist.append(horizon)
+        # No extension
+        elif (len(list_left) == 0) and (len(list_right) == 0):
+            # Blacklists original horizon
+            blacklist.append(horizon)
+    
+    return new_horizons, new_horizons_t, signs_list
+
+def cross_horijoin(horizons):
+    pass
