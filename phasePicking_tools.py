@@ -16,6 +16,7 @@ Based on the work of Matteo Dossi, Emanuele Forte and Michele Pipan:
 import numpy as np
 from itertools import groupby
 from operator import itemgetter
+from scipy import interpolate
 from tqdm import tqdm
 
 def quad_trace(data):
@@ -258,7 +259,7 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
 
     return list_horizons, list_horizons_offs, Cij_clone, twtij_clone
 
-def horijoin(horizons,Cij_clone,twtij_clone,section,Lg=False,Tj=False):
+def horijoin(horizons,Cij_clone,twtij_clone,Lg=False,Tj=False,section=0):
     """
     Function that takes the output of the function horipick and joins close horizons together following some conditions.
     1. Same polarity
@@ -413,7 +414,7 @@ def horijoin(horizons,Cij_clone,twtij_clone,section,Lg=False,Tj=False):
                 #                left.append(pre_left[i])
                 #else:
                 for i in range(len(pre_left)):
-                    # Checks if the potential jonction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
+                    # Checks if the potential junction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
                     x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
 
                     # Adds the horizons to the "left" list if no crossing - Remove if using Phase crossing
@@ -647,5 +648,81 @@ def horijoin(horizons,Cij_clone,twtij_clone,section,Lg=False,Tj=False):
     
     return new_horizons, new_horizons_t, signs_list
 
-def cross_horijoin(horizons):
-    pass
+def cross_horijoin(junction,current_hori,horizons,hori_t,new_horit,direction="left"):
+    """
+    Function to check if a potential junction between existing horizons will cross another existing horizon. If there is a cross, the junction is forgotten. This function is used by the function "horijoin()".
+
+    INPUT:
+    - junction: Potential horizon that needs to be checked. List of 2 tuples describing the ending and starting positions of the 2 horizons that could be joined
+    - current_hori: Horizon currently analyzed by the horijoin() function. [hori_combine_t]
+    - horizons: The original sorted list of horizons passed to the horijoin() function. [horizons_tri]
+    - hori_t: Object created by the horijoin function [time_hori]. Lists the values of twtij associated to the positions in horizons_tri
+    - new_horit: The time output of horijoin() function. [new_horizon_t]
+    - direction: String "left" or "right". Indicates in wich direction a junction could happen relatively to the horizon currently analyzed by the horijoin() function.
+
+    OUTPUT:
+    - xbool: List of bool values indicating if a new junction is crossing an existing horizon. 
+    """
+    if direction == "left":
+        # interp1d([x1,x2],[y1,y2],kind="linear")
+        # Linear interpolation X: [Last trace of the horizon to the left, First trace current horizon]
+        # Linear interpolation Y: [Last time (hori_t) of the horizon to the left, First time current horizon]
+        fa = interpolate.interp1d([horizons[junction][-1][1],current_hori[0][1]],[hori_t[junction][-1][0],current_hori[0][0]],kind='linear')
+        # List of the traces included in the gap between the current horizon and the potential horizon to the left. The number of horizontal positions is multiplied by 8 to help the detection of crossings. 
+        xa = np.linspace(horizons[junction][-1][1],current_hori[0][1],((current_hori[0][1]-horizons[junction][-1][1])*8)+1)
+        # Calculates vertical positions at each new horizontal positions
+        new_a = fa(xa)
+    elif direction == "right":
+        # interp1d([x1,x2],[y1,y2],kind="linear")
+        # Linear interpolation X: [Last trace current horizon, First trace of the horizon to the right]
+        # Linear interpolation Y: [Last time current horizon,First time (hori_t) of the horizon to the right]
+        fa = interpolate.interp1d([current_hori[-1][1],horizons[junction][0][1]],[current_hori[-1][0],hori_t[junction][0][0]],kind='linear')
+        # List of the traces included in the gap between the current horizon and the potential horizon to the right. The number of horizontal positions is multiplied by 8 to help the detection of crossings.
+        xa = np.linspace(current_hori[-1][1],horizons[junction][0][1],((horizons[junction][0][1]-current_hori[-1][1])*8)+1)
+        # Calculates vertical positions at each new horizontal positions
+        new_a = fa(xa)
+
+    # Lists every horizons that can possibly cross the potential junction. For the crossing to be possible, an horizon must share a horizontal position with xa (Horizontal positions of the gap)
+    hori_poss = []
+    for elem in hori_t:
+        # Lists the horizontal positions of every existing horizons
+        xelem = np.linspace(elem[0][1],elem[-1][1],((elem[-1][1]-elem[0][1])*8)+1)
+        # Finds the intersections between the sets xelem and xa
+        if len(np.intersect1d(xa,xelem,return_indices=False))>0:
+            # Adds the horizons that share a position with xa to hori_poss
+            hori_poss.append(elem)
+    # Same thing as previous loop, but this one examines new horizons, so the junctions that have already been accepted are taken into account.
+    for nelem in new_horit:
+        n_xelem = np.linspace(nelem[0][1],nelem[-1][1],((nelem[-1][1]-nelem[0][1])*8)+1)
+        if len(np.intersect1d(xa,n_xelem,return_indices=False))>0:
+            hori_poss.append(nelem)
+
+    # Checks if the horizons in hori_poss are really crossing the potential junction.
+    if len(hori_poss) > 0:
+        xbool = []
+        # Lists the horizontal and vertical positions contained in hori_poss
+        for candid in hori_poss:
+            b_x = []
+            b_y = []
+            for elem in candid:
+                b_y.append(elem[0])
+                b_x.append(elem[1])
+            # Interpolates these positions in order to increase the horizontal sampling by 8
+            fb = interpolate.interp1d(b_x,b_y,kind='linear')
+            xb = np.linspace(candid[0][1],candid[-1][1],((candid[-1][1]-candid[0][1])*8)+1)
+            new_b = fb(xb)
+            # Finds traces that are shared between xa (junction) and xb (horizonsin the gap)
+            intersec,com1,com2 = np.intersect1d(xa,xb,return_indices=True)
+            # At each shared positions, computes the subtraction of vertical positions
+            sign = new_b[com2[0]:com2[-1]]-new_a[com1[0]:com1[-1]]
+            # Checks for sign changes. If there is a sign change, we have a crossing
+            zero_crossings = np.where(np.diff(np.sign(sign)))[0]
+
+            # Marks True every crossing
+            if len(zero_crossings) > 0:
+                xbool.append(True)
+            else:
+                xbool.append(False)
+                
+        return xbool
+    
