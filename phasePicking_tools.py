@@ -726,3 +726,75 @@ def cross_horijoin(junction,current_hori,horizons,hori_t,new_horit,direction="le
                 
         return xbool
     
+def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,tolmin_t=0.6,tolmax_t=2,Lg=50,Tj=7):
+    """
+    Function to complete phase picking on dikes (Short intervals of traces (constant widths) with steep reflectors). This function is written specifically for the cranberry fields I am studying.
+
+    INPUT:
+    - dike_case: Integer indicating the position of the dike.  
+            (0 = 1 dike at the very beginning + 1 dike at the very end of the data)
+            (1 = 1 dike at the very beginning only (data ends with a flat field))
+            (2 = 1 dike at the very end only)
+            (3 = No dikes at the data extremities)
+    - iteration: Integer indicating the current iteration (The function pick_dike must be used inside a loop iterating on the list of dikes' positions.)
+    - dikes: List of tuples indicating the positions of the dikes.
+    - Cij: Original Cij matrix or its copy
+    - twtij: Original twtij matrix or its copy
+    - Tph: Estimated temporal width of a phase (Width of air wave)
+    - ice: List of vertical positions corresponding to the smoothed ice surface in the fields (Output of horijoin())
+    - len_min: Threshold to filter horizons that are too short
+    - tol_C: Filters elements in the Cij matrix with weak amplitude (for horipick())
+    - tolmin_t/tolmax_t: Filters phases in the twtij matrix of too short or too long duration (for horipick())
+    - Lg: Max spatial spacing between 2 horizons for the junction
+    - Tj: Max temporal spacing between 2 horizons for the junction
+
+    OUTPUT:
+    - x_dig: Horizontal positions of automatically selected points
+    - t_dig: Vertical positions of automatically selected points
+    """
+    # Selects the traces in the Cij and twtij matrix that corresponds to the current dike
+    if dike_case == 0:
+        if iteration < (len(dikes)-2):
+            Cij_dike = Cij[:,dikes[iteration+1][0]:dikes[iteration+1][1]]
+            twtij_dike = twtij[:,dikes[iteration+1][0]:dikes[iteration+1][1]]
+    elif dike_case == 1:
+        if iteration < (len(dikes)-1):
+            Cij_dike = Cij[:,dikes[iteration+1][0]:dikes[iteration+1][1]]
+            twtij_dike = twtij[:,dikes[iteration+1][0]:dikes[iteration+1][1]]
+    elif dike_case == 2:
+        if iteration < (len(dikes)-1):
+            Cij_dike = Cij[:,dikes[iteration][0]:dikes[iteration][1]]
+            twtij_dike = twtij[:,dikes[iteration][0]:dikes[iteration][1]]
+    elif dike_case == 3:
+        Cij_dike = Cij[:,dikes[iteration][0]:dikes[iteration][1]]
+        twtij_dike = twtij[:,dikes[iteration][0]:dikes[iteration][1]]
+
+    # Filters early horizons
+    late_phase = np.argwhere(twtij_dike >= (int(np.max(ice))+2*Tph))
+    if len(late_phase)>0:
+        # Replaces early phases with impossible values
+        fil_Cij = 2*np.ones((1,len(late_phase)))
+        fil_twtij = -1*np.ones((1,len(late_phase)))
+        row, cols = zip(*late_phase)
+        Cij_dike[row,cols] = fil_Cij
+        twtij_dike[row,cols] = fil_twtij
+    # Horizons detection
+    hori_dike,hori_dike_tp,C_dike,t_dike,nosign = horipick(Cij_dike,twtij_dike,Tph,tol_C=tol_C,tolmin_t=tolmin_t,tolmax_t=tolmax_t)
+    # Removes too short detected horizons 
+    long_dike = [dike for dike in hori_dike if len(dike) > len_min]
+    # Horizons junction
+    longer_dike,longer_diket,signs = horijoin(long_dike,C_dike,t_dike,champ=None,Lg=Lg,Tj=Tj,min_length=False)
+    # Detects the longest horizon
+    lgst_dike = max(longer_diket, key=len)
+    # Position correction. Shifts the detected horizons horizontally to get true absolute positionning, since the dikes rarely begin at trace 0. 
+    dike_tr = [m[1]+dikes[iteration+1][0] for m in lgst_dike]
+    dike_temp = [n[0] for n in lgst_dike]
+    # Interpolation to get a selected value at each trace (Continuous reflector).
+    x_dike = np.linspace(dike_tr[0],(dike_tr[-1])-1,dike_tr[-1]-dike_tr[0])
+    f_dike = interpolate.interp1d(dike_tr,dike_temp,kind="linear")
+    t_dike = f_dike(x_dike)
+
+    return x_dike,t_dike
+
+
+
