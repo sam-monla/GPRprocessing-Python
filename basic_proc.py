@@ -4,10 +4,12 @@ Functions to apply basic processing steps to GPR data.
 The following funcions are taken from the GPRPy repository (https://github.com/NSGeophysics/GPRPy):
 - deWOW()
 - rem_mean_trace()
+- correctTopo()
 """
 import numpy as np
 from tqdm import tqdm
 from scipy import linalg
+import scipy.interpolate as interp
 
 def rem_empty(data):
     """
@@ -176,20 +178,73 @@ def quick_SVD(data_part,coeff=[None,None]):
 
     return reconstruct
 
-def band_filter(data,header,freq1,freq2):
-    """
-    """
-    ft = [np.fft.fft(data[:,i]) for i in range(data.shape[1])]
-    freq = [np.fft.fftfreq(len(data[:,i]),(header['ns_per_zsample'])) for i in range(data.shape[1])]
-    mags = [ft[i] for i in range(len(ft))]
-    mags = np.asarray(mags)
-    dat_pb = np.copy(data)
-    for i in range(mags.shape[0]):
-        freqen = np.asarray(freq[i])
-        magmax = np.where(mags[i,:] == np.max(mags[i,:]))[0][0]
-        #mags[i,:] = (freqen>0.067e9).astype("int")*mags[i,:]
-        mags[i,:] = (freqen>freq1).astype("int")*mags[i,:]
-        #mags[i,:] = (freqen<0.47e9).astype("int")*mags[i,:]
-        mags[i,:] = (freqen>freq2).astype("int")*mags[i,:]
-        coupe_temp = np.fft.ifft(mags[i,:])
-        dat_pb[:,i] = coupe_temp
+#def band_filter(data,header,freq1,freq2):
+#    """
+#    """
+#    ft = [np.fft.fft(data[:,i]) for i in range(data.shape[1])]
+#    freq = [np.fft.fftfreq(len(data[:,i]),(header['ns_per_zsample'])) for i in range(data.shape[1])]
+#    mags = [ft[i] for i in range(len(ft))]
+#    mags = np.asarray(mags)
+#    dat_pb = np.copy(data)
+#    for i in range(mags.shape[0]):
+#        freqen = np.asarray(freq[i])
+#        magmax = np.where(mags[i,:] == np.max(mags[i,:]))[0][0]
+#        #mags[i,:] = (freqen>0.067e9).astype("int")*mags[i,:]
+#        mags[i,:] = (freqen>freq1).astype("int")*mags[i,:]
+#        #mags[i,:] = (freqen<0.47e9).astype("int")*mags[i,:]
+#        mags[i,:] = (freqen>freq2).astype("int")*mags[i,:]
+#        coupe_temp = np.fft.ifft(mags[i,:])
+#        dat_pb[:,i] = coupe_temp
+
+def correctTopo(data, velocity, profilePos, topoPos, topoVal, twtt):
+    '''
+    Corrects for topography along the profile by shifting each 
+    Trace up or down depending on provided coordinates.
+    Taken from GPRPy. 
+
+    INPUT:
+    - data:          data matrix whose columns contain the traces
+    - velocity:      subsurface RMS velocity in m/ns
+    - profilePos:    along-profile coordinates of the traces
+    - topoPos:       along-profile coordinates for provided elevation
+                  in meters
+    - topoVal:       elevation values for provided along-profile 
+                  coordinates, in meters
+    - twtt:          two-way travel time values for the samples, in ns
+
+    OUTPUT:
+    - newdata:       data matrix with shifted traces, padded with NaN 
+    - newtwtt:       twtt for the shifted / padded data matrix
+    - maxElev:       maximum elevation value
+    - minElev:       minimum elevation value
+    '''
+    # We assume that the profilePos are the correct along-profile
+    # points of the measurements
+    # For some along-profile points, we have the elevation from prepTopo
+    # So we can just interpolate    
+    if not ((all(np.diff(topoPos)>0)) or  (all(np.diff(topoPos)<0))):
+        raise ValueError('\x1b[1;31;47m' + 'The profile vs topo file does not have purely increasing or decreasing along-profile positions' + '\x1b[0m')        
+    else:
+        elev = interp.pchip_interpolate(topoPos,topoVal,profilePos)
+        elevdiff = elev-np.min(elev)
+        # Turn each elevation point into a two way travel-time shift.
+        # It's two-way travel time
+        etime = 2*elevdiff/velocity
+        timeStep=twtt[3]-twtt[2]
+        # Calculate the time shift for each trace
+        tshift = (np.round(etime/timeStep)).astype(int)
+        maxup = np.max(tshift)
+        # We want the highest elevation to be zero time.
+        # Need to shift by the greatest amount, where  we are the lowest
+        tshift = np.max(tshift) - tshift
+        # Make new datamatrix
+        newdata = np.empty((data.shape[0]+maxup,data.shape[1]))
+        newdata[:] = np.nan
+        # Set new twtt
+        newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata.shape[0])
+        nsamples = len(twtt)
+        # Enter every trace at the right place into newdata
+        for pos in range(0,len(profilePos)):
+            newdata[tshift[pos]:tshift[pos]+nsamples ,pos] = np.squeeze(data[:,pos])
+
+        return newdata, newtwtt, np.max(elev), np.min(elev), tshift

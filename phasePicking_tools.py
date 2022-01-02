@@ -749,8 +749,8 @@ def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,to
     - Tj: Max temporal spacing between 2 horizons for the junction
 
     OUTPUT:
-    - x_dig: Horizontal positions of automatically selected points
-    - t_dig: Vertical positions of automatically selected points
+    - x_dike: Horizontal positions of automatically selected points
+    - t_dike: Vertical positions of automatically selected points
     """
     # Selects the traces in the Cij and twtij matrix that corresponds to the current dike
     if dike_case == 0:
@@ -796,5 +796,133 @@ def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,to
 
     return x_dike,t_dike
 
+def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,offset=0,smooth=75,veloc=0.1,resample=1):
+    """
+    Function to merge results from fields and dikes picking AND apply topographic correction. I use this function mainly to correct vertical displacements due to the snow cover and to produce a clean and single object to pass to the final functions.
 
+    INPUT:
+    - data: Original data matrix
+    - x_dike: Output of pick_dike (x_dike). List of lists containing the absolute horizontal positions of the picked coordinates in the dikes regions.
+    - x_field: List of lists containing the absolute horizontal positions of the picked coordinates in the fields regions.
+    - t_dike: Output of pick_dike (t_dike). List of lists containing the absolute vertical positions of the picked coordinates in the dikes regions.
+    - t_field: List of lists containing the absolute vertical positions of the picked coordinates in the fields regions.
+    - GPS: GPS coordinates of every traces with the elevations estimated from LIDAR data.
+    - offset: Used to take into account the potential subtraction of early datas. For example, if we don't use the 5 first samples to delete air wave, we need to fix this parameter to 5. (Default is 0).
+    - smooth: Integer used to define a smoothing window for the total surface (fields + dikes). Default is 75 traces.
+    - veloc: Estimation of a constant EM wave velocity. Since I use this function to remove a layer of snow/ice, the default setting is 0.1 ns/m. 
+    - resample: Integer to increase the number of samples using interpolation and smooth the topographic correction result. For example, if a trace needs a 2 samples vertical shift and it's neighbor stays the same, the quality of the result will depends to a degree of the vertical resolution. (Default = 1 -> No resampling) (resample = 4 -> Pass from 0,1,... to 0,0.25,0.5,0.75,1.0,...)
+    This parameter increases the size of the matrix, wich can leads to memory problems with other functions.
 
+    OUTPUT:
+    - newdata_res: Data matrix after resampling and topographic correction
+    - GPS_final: GPS_final takes the padding into account. To use if you want to display the picked surface over the resampled radargram with topographic correction
+    - x_tot: Horizontal positions of the picked surface at every trace.
+    - tot_liss_rad: Vertical positions of the picked surface at every trace, as a single object (Takes into account the resampling and the offset)
+    """
+    # If there is dikes
+    if (x_dike != None) and (t_dike != None):
+        # Concatenate all lists in the right order
+        pos_hori = []
+        pos_verti = []
+        for i in range(len(x_dike)):
+            pos_hori.append(x_field[i])
+            pos_hori.append(x_dike[i])
+            pos_verti.append(t_field[i])
+            pos_verti.append(t_dike[i])
+        pos_hori.append(x_field[-1])
+        pos_verti.append(t_field[-1])
+        # Concatenates
+        pos_hori = [n for m in pos_hori for n in m]
+        pos_verti = [p for o in pos_verti for p in o]
+
+        # Interpolation - 1 point at every trace
+        x_tot = np.linspace(pos_hori[0],pos_hori[-1],pos_hori[-1]-pos_hori[0]+1)
+        f_tot = interpolate.interp1d(pos_hori,pos_verti,kind="linear")
+        temps_tot = f_tot(x_tot)
+
+        # Smoothing
+        tottraces = len(x_tot)
+        tot_liss = np.zeros(len(x_tot))
+        halfwid_tot = int(np.ceil(smooth/2))
+        # First traces
+        tot_liss[:halfwid_tot+1] = np.mean(temps_tot[:halfwid_tot+1])
+        # Last traces
+        tot_liss[tottraces-halfwid_tot:] = np.mean(temps_tot[tottraces-halfwid_tot:])
+        # Assign the mean value of the window to the middle element
+        for lt in range(halfwid_tot,tottraces-halfwid_tot+1):
+            tot_liss[lt] = np.mean(temps_tot[lt-halfwid_tot:lt+halfwid_tot])
+
+    # If no dikes, just make sure there is 1 point at every trace
+    else:
+        x_tot = np.linspace(x_field[0],x_field[-1],x_field[-1]-x_field[0]+1)
+        tot_liss = t_field
+
+    # Positionning of GPS data on the radargram
+    # Gets the elevation estimated from LIDAR data
+    GPS_line = GPS[:,2]
+    # Gets the max elevation
+    elev_max = np.max(GPS_line)
+    GPSns = np.copy(GPS_line)
+    # Gets the difference between every elevation and the max elevation, and divides it by the velocity estimation for snow/ice to convert elevations to time data.
+    GPSns = ((elev_max - GPSns)/veloc)
+    # Keeps only the traces with picked coordinates
+    GPS_ice = GPSns[int(x_tot[0]):int(x_tot[-1])+1]
+    # Picks the max elevation in terms of samples (the earliest sample is the highest point of elevation)
+    elevmax_ice = np.min(tot_liss)
+    ind_ice = np.where(tot_liss == elevmax_ice)[0][0]
+    # Positions the GPS elevations now converted to time at the place as the picked surface on the radargram, based on the point of max elevation
+    diff = GPS_ice[ind_ice] - tot_liss[ind_ice]
+    GPS_ice_rad = GPS_ice - diff
+
+    # Determines the vertical shift to apply at each trace
+    shift_list_samp = (tot_liss - GPS_ice_rad)
+
+    # If there is resampling
+    if resample > 1:
+        # To be sure every shift is an integer
+        shift_list_samp_res = np.round(shift_list_samp*resample)/resample
+        # Resampling of the data using linear interpolation and converting to float32 to avoid memory problems.
+        data = data.astype("float32")
+        x_mat = np.linspace(0,data.shape[0]-1,num=data.shape[0])
+        f_resamp = interpolate.interp1d(x_mat,data,kind="linear",axis=0)
+        x_resamp = np.linspace(0,x_mat[-1],num=(resample*len(x_mat)-(resample-1)))
+        dat_resamp = f_resamp(x_resamp)
+        dat_resamp = dat_resamp.astype("float32")
+
+        # Minimum shift to apply (after resampling)
+        shift_min_res = int(np.amin(shift_list_samp_res)//(1/resample))
+        # Maximum shift to apply (after resampling)
+        shift_max_res = int(np.amax(shift_list_samp_res)//(1/resample))
+        # Upper padding of the resampled matrix - We need free space to shift the data up or down.
+        # The constant 8192 was use for tests, it can be any value.
+        pillow_res = 8192*np.ones((abs(shift_max_res), len(x_tot)))
+        # Lower padding of the resampled matrix
+        pillow_res_inf = 8192*np.ones((abs(shift_min_res), len(x_tot)))
+        # Initialization of the final matrix. It's the resampled matrix, filled with zeros, sandwiched between the 2 padding matrix. 
+        newdata_res = np.vstack((pillow_res,np.zeros((dat_resamp.shape[0],len(x_tot))), pillow_res_inf))
+        for i in range(len(x_tot)):
+            newdata_res[int(abs(shift_max_res))-int(shift_list_samp_res[i]//(1/resample)):int(abs(shift_max_res))-int(shift_list_samp_res[i]//(1/resample))+dat_resamp.shape[0],i] = dat_resamp[:,i+int(x_tot[0])]
+
+    # If we don't want a resampling
+    elif resample == 1:
+        shift_min_res = int(np.amin(shift_list_samp))
+        shift_max_res = int(np.amax(shift_list_samp))
+        pillow_res = np.ones((abs(shift_max_res), len(x_tot)))
+
+        # Creates lower padding only if necessary
+        if any(shifty < 0 for shifty in shift_list_samp):
+            pillow_res_inf = np.ones((abs(shift_min_res), len(x_tot)))
+            newdata_res = np.vstack((pillow_res,np.zeros((data.shape[0],len(x_tot))), pillow_res_inf))
+        else:
+            newdata_res = np.vstack((pillow_res,np.zeros((data.shape[0],len(x_tot)))))
+
+        for i in range(len(x_tot)):
+            newdata_res[int(abs(shift_max_res))-int(shift_list_samp[i]):int(abs(shift_max_res))-int(shift_list_samp[i])+data.shape[0],i] = data[:,i+int(x_tot[0])]
+        
+    # New positionning of GPS data on radargram
+    # GPS_final takes the padding into account. To use if you want to display the picked surface over the resampled radargram with topographic correction
+    GPS_final = (GPS_ice_rad)*resample + pillow_res.shape[0] + offset*resample
+    # Vertical positions of the picked surface at every trace, as a single object
+    tot_liss_rad = tot_liss*resample + offset*resample
+
+    return newdata_res, GPS_final, x_tot, tot_liss_rad
