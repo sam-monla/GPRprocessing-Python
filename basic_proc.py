@@ -247,4 +247,69 @@ def correctTopo(data, velocity, profilePos, topoPos, topoVal, twtt):
         for pos in range(0,len(profilePos)):
             newdata[tshift[pos]:tshift[pos]+nsamples ,pos] = np.squeeze(data[:,pos])
 
-        return newdata, newtwtt, np.max(elev), np.min(elev), tshift
+    return newdata, newtwtt, np.max(elev), np.min(elev), tshift
+
+def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
+    """
+    Function to find the dikes' positions. This function is written specifically for the cranberry fields that I study. It is very likely to be useless for other projects.
+
+    Calculates a moving average over a short window and finds dikes from the difference between elevations from LIDAR and the average. A threshold must be defined. 
+
+    INPUT:
+    - elev_lidar: Elevations estimated with LIDAR data. 
+    - dike_wid: Number of traces contained approximately over 1 dike (Default is 600).
+    - data_div: Integer to define the length of the window for the moving average. For example, a value of 60 will make a window of len(elev_lidar)/60 traces long. It is recommended to use a value to get a window shorter than a dike (window length ~ dike_wid/3).
+    - thresh: Threshold value. Finds the locations where (moving_average - elev_lidar) is big -> That's the positions of the dikes. Default = 0.2. To change default, look the OUTPUT diff_clone. 
+
+    OUTPUT:
+    - dikes: List of tuples containing dikes' positions [(first_trace_dike1,last_trace_dike1),(first_trace_dike2, last_trace_dike2),...]
+    - diff_clone: Numoy array containing the difference between moving_average and elev_lidar. If you want to change the threshold value -> plt.plot(diff_clone)
+    """
+    tottraces = len(elev_lidar)
+    win = int(len(elev_lidar)/data_div)
+    # Initialization of the moving average array
+    moving_average = np.zeros(elev_lidar.shape)
+    halfwid = int(np.ceil(win/2))
+    # First traces, can't use the whole window, so we just compute the mean value
+    moving_average[:halfwid+1] = np.mean(elev_lidar[:halfwid+1])
+    # Same thing for the last traces
+    moving_average[tottraces-halfwid:] = np.mean(elev_lidar[tottraces-halfwid:])
+    for i in range(halfwid,tottraces-halfwid+1):
+        moving_average[i] = np.mean(elev_lidar[i-halfwid:i+halfwid])
+
+    diff = moving_average-elev_lidar
+    # Replaces every negative values with 0
+    diff = diff.clip(min=0)
+    # Normalizes diff so every value is between 0 and 1
+    diff_norm = diff/np.max(diff)
+    # Saves the normalized diff -> Useful to adjust the threshold
+    diff_clone = np.copy(diff_norm)
+
+    # Finding the dikes
+    dikes = []
+    for elem in range(0, len(diff_norm)):
+        # For dikes (diff_norm >= thresh) at the very end of the radargram
+        if diff_norm[elem] >= thresh and (elem > len(diff_norm)-dike_wid):
+            # Checks if there is a leat another value greater than threshold
+            if True in (diff_norm[elem+1:] > thresh):
+                # Adds the first value over threshold and every other one to the end
+                dikes.append((elem, len(diff_norm)-1))
+                diff_norm[elem:] = 0
+        # For dikes at the very beginning of the radargram
+        elif diff_norm[elem] >= thresh and (elem < dike_wid):
+            if True in (diff_norm[elem+1:] > thresh):
+                # Selects every value within the range of a dike width
+                dikes.append((0, np.max(np.where(diff_norm[elem+1:elem+dike_wid] > thresh)) + elem+1))
+                diff_norm[:elem+dike_wid] = 0
+        # For other dikes (in the middle of the radargram)
+        elif diff_norm[elem] >= thresh:
+            if True in (diff_norm[elem+1:elem+dike_wid] > thresh):
+                dikes.append((elem, np.max(np.where(diff_norm[elem+1:elem+dike_wid] > thresh)) + elem+1))
+                # Every selected value gets canceled so they are overlooked when finding the next dike
+                diff_norm[elem:elem+dike_wid] = 0
+
+    return dikes, diff_clone
+
+
+
+
