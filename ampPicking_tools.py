@@ -1,13 +1,17 @@
 """
 Set of functions useful for the process of amplitude picking. The method described as amplitude picking is separated in 3 steps.
+
 1. Preliminary picking : For each trace, picks the first amplitude that exceeds a high threshold (Must remove air waves)
-2. Horizontal smoothing
-3. Final picking
+
+2. Horizontal smoothing : Removes each picked coordinates that introduce high vertical variations. Interpolates a smooth surface with the remaining picked coordinates.
+
+3. Final picking :
 
 Bad coding
 """
 import numpy as np
 from scipy import linalg
+from scipy import interpolate
 
 def prel_picking(data,dikes,header,samp_max):
     """
@@ -101,6 +105,146 @@ def prel_picking(data,dikes,header,samp_max):
         del reconstruct
 
     return res_pick, res_pick_brut, recon
+
+def hori_smooth(win,scale,pick_data,degree=1):
+    """
+    Function to filter picked coordinates that are too far from the expected result (coordinates that introduce great vertical variations). The radargram is separated in windows. In each window, the median value and the standard deviation is calculated. Every value outside the range (median +/- scale*std) is canceled. With the remaining points, a surface is calculated. 
+
+    INPUT:
+    - win: Window lenght (in no. of traces)
+    - scale: Sets the tolerance for the max. accepted deviation between a picked value and the mean for a given window. The scale factor sets the tolerance this way -> tol = median +/- scale*standard deviation.
+    - pick_data: The picked data (Output of prel_picking)
+    - degree: Degree of the fitting polynomial used by np.polyfit() (Default is 1)
+
+    OUTPUT:
+    - smooth_result: Smoothed surface calculated from every points that don't introduce great vertical variations. smooth_result gives a vertical coordinate for every single trace.
+
+    """
+    # Initialization of the smoothed surface. Each segment of this surface is win/2 traces long.
+    step = int(win/2)
+    bins = np.arange(0, len(pick_data), step)
+    xsmooth_seed = np.zeros(len(bins))
+    ysmooth_seed = np.zeros(len(bins))
+
+    ### - First values - ####################################################################################
+    # Picks every points between 0 and win/2
+    yobs = pick_data[0:bins[1]]
+    xobs = np.linspace(0,bins[1],num=len(yobs))
+    # Gets the mean value and standard deviation
+    mu_data = np.median(yobs)
+    sigma_data = np.std(yobs)
+    # Avoids filtering every single coordinates
+    if sigma_data == 0:
+        sigma_data = 0.25
+    # Finds every value inside the tolerance
+    y_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+    x_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+
+    # Repeats the tolerance process if zero picked coordinates are remaining. The tolerance is increased gradually until at least one coordinate remains. 
+    multi = 1.5
+    while len(x_sond[0]) == 0:
+        x_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+        y_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+        multi += 0.5
+    
+    # Gets the radargram positions of the remaining points. x_y_sond only gives the index (not good for vertical values)
+    y = [yobs[i] for i in y_sond[0]]
+    x = [xobs[j] for j in x_sond[0]]
+    # Fits a polynomial to the remaining points.
+    p=np.polyfit(x,y,degree)
+    # Sets the first value of the smoothed surface
+    xsmooth_seed[0]=min(xobs)
+    ysmooth_seed[0]=np.polyval(p,min(xobs))
+
+    ### - Last values - #####################################################################################
+    # Same thing as with the first values
+    yobs = pick_data[bins[-2]:]
+    xobs = np.linspace(bins[-2],len(pick_data)-1,num=len(yobs))
+    mu_data = np.median(yobs)
+    sigma_data = np.std(yobs)
+    if sigma_data == 0:
+        sigma_data = 0.25
+    y_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+    x_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+
+    multi = 1.5
+    while len(x_sond[0]) == 0:
+        x_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+        y_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+        multi += 0.5
+
+    y = [yobs[i] for i in y_sond[0]]
+    x = [xobs[j] for j in x_sond[0]]
+    p=np.polyfit(x,y,degree)
+    # Sets the last value of the smoothed surface
+    xsmooth_seed[-1]=max(xobs)
+    ysmooth_seed[-1]=np.polyval(p,max(xobs))
+
+    ### - Other values - ####################################################################################
+    # Same thing as with first values
+    for i in range(1, len(bins)-1):
+        yobs = pick_data[bins[i-1]:bins[i+1]]
+        xobs = np.linspace(bins[i-1],bins[i+1],num=len(yobs))
+        mu_data = np.median(yobs)
+        sigma_data = np.std(yobs)
+        if sigma_data == 0:
+            sigma_data = 0.25
+        y_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+        x_sond = np.where((yobs<mu_data+(scale*sigma_data)) & (yobs>mu_data-(scale*sigma_data)))
+
+        multi = 1.5
+        while len(x_sond[0]) == 0:
+            x_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+            y_sond = np.where((yobs<mu_data+(multi*scale*sigma_data)) & (yobs>mu_data-(multi*scale*sigma_data)))
+            multi += 0.5
+
+        y = [yobs[i] for i in y_sond[0]]
+        x = [xobs[j] for j in x_sond[0]]
+        p=np.polyfit(x,y,degree)
+        xsmooth_seed[i]=bins[i]
+        ysmooth_seed[i]=np.polyval(p,bins[i])
+    
+    # The smoothed surface interpolated previously only have a few points (One every win/2 traces). Here, we interpolate one point for every trace from the smoothed surface
+    f = interpolate.interp1d(xsmooth_seed, ysmooth_seed,kind='slinear')
+    traces = np.arange(0, len(pick_data), 1)
+    smooth_result = f(traces)
+
+    return smooth_result
+
+def final_picking(smooth_surf, lim, data, ntraces, header, start):
+    """
+    Function for the final picking of GPR data. This function takes the smoothed surface produced by hori_smooth() and defines a searching window around it. The sample with the biggest amplitude inside this window is taken. 
+
+    INPUT:
+    - smooth_surf: Smoothed surface (Output of hori_smooth())
+    - lim: Sets a vertical limit for the searching window. For example, if you only take the first 100 samples of the data and the searching window is centered at sample 99, this parameter avoids definning a window going to sample 101.
+    - data: Data matrix (Output of prel_picking())
+    - ntraces: Total number of traces in data
+    - header: Header of the DZT file
+    - start: Starting trace. If you only want to do picking on a portion of the data, set this parameter to the first trace of the portion.
+
+    OUTPUT:
+    - cx: Horizontal picked coordinates (meters)
+    - cy: Vertical picked coordinates (ns)
+    - cx_brut: Horizontal picked coordinates (trace)
+    - cy_brut: Vertical picked coordinates (sample)
+    """
+    # Gets vertical index of smoothed surface
+    mat_ind = (np.round(smooth_surf)).astype('int')
+    # Searching window is 5 samples wide centered around the smoothed surface
+    mat_ind = np.vstack((mat_ind-2, mat_ind-1, mat_ind, mat_ind+1, mat_ind+2))
+    # Avoids searching window going off bounds
+    mat_ind[mat_ind >= lim] = lim - 1.
+    size = mat_ind.shape[1]
+    # Isolates the part of data inside the searching window for every trace
+    pick2 = [data[mat_ind[:,i],i] for i in range(size)]
+    pick2 = (np.stack(pick2)).T
+    lines = pick2.tolist()
+    # Picking
+    colnorm = conv_col_norm(lines, norm=True, norm_comp=False)
+    cx, cy, cx_brut, cy_brut = basic_picker(colnorm, 0.4, start, ntraces, header["ns_per_zsample"]*1e9, header["sec"], dec_temp=mat_ind[0])
+
+    return cx, cy, cx_brut, cy_brut
 
 def conv_col_norm(list_lines, norm=True):
     """
