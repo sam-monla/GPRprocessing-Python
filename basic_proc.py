@@ -11,6 +11,63 @@ from tqdm import tqdm
 from scipy import linalg
 import scipy.interpolate as interp
 
+def lidar2gps_elev(coordlas,GPS,isNorth=False,dimE=3,dimN=2):
+    """
+    Function to interpolate elevations at each GPS positions from LIDAR data. The direction of the GPS line is important in the interpolation process because of the dikes situation. The isNorth=True case is the one for data with no dikes. 
+
+    INPUT:
+    - coordlas: LIDAR data (Output of readLas() function in file_mgmt.py)
+    - GPS: GPS data from the .dst file. Array of 3 columns (X,Y,Z)
+    - isNorth: Boolean value. True if the GPS line goes in the North/South (vertical) directions, False if the GPS line goes in the East/West (horizontal) directions.
+    - dimE: Width (in meters) of the rectangle used to interpolate an elevation from LIDAR data for a GPS line that goes in the East/West directions (default is 3)
+    - dimN: Width (in meters) of the square used to interpolate an elevation from LIDAR data for a GPS line that goes in the North/South directions (default is 2)
+
+    OUTPUT:
+    - gps: Numpy array of 3 columns (X,Y,Z) describing the GPS positions of a GPR line. In this output, the GPS elevations are replaced by values estimated from LIDAR data.
+    """
+    # Finds the smallest rectangle in the field that can contain every single trace of the GPS line
+    # Values at the limits
+    minEast = np.min(GPS[:,0])
+    maxEast = np.max(GPS[:,0])
+    minNorth = np.min(GPS[:,1])
+    maxNorth = np.max(GPS[:,1])
+
+    # Finds every LIDAR point inside the rectangle
+    index = (coordlas[:,0]>=minEast) & (coordlas[:,1]>=minNorth) & (coordlas[:,0]<=maxEast) & (coordlas[:,1]<=maxNorth)
+    las_flt = coordlas[index]
+
+    # Sometimes, las_flt doesn't contain enough data to correctly identify the position of the dikes. We recommend having at least 300 points in las_flt. The rectangle is extended.
+    if not isNorth:
+        spread = 0.5
+        while las_flt.shape[0] < 300:
+            minNorth_b = minNorth - spread
+            maxNorth_b = maxNorth + spread
+            index = (coordlas[:,0]>=minEast) & (coordlas[:,1]>=minNorth_b) & (coordlas[:,0]<=maxEast) & (coordlas[:,1]<=maxNorth_b)
+            las_flt = coordlas[index]
+            spread += 0.5
+    
+    las_flt = np.asarray(las_flt)
+    gps = np.asarray(GPS)
+    coords = np.vstack((las_flt[:,0], las_flt[:,1], las_flt[:,2]))
+
+    liste = []
+    # For each GPS position, we find:
+    # Every LIDAR points that are included in a rectangle dimN meters wide and 20*dimN meters high centered at the GPS position (when isNorth is True)
+    # OR
+    # Every LIDAR points that are included in a rectangle dimE wide and infinitely high centered at the GPS position (when isNorth is False)
+    for pos in gps:
+        if isNorth:
+            ind = np.where((coords[0]>=pos[0]-dimN/2) & (coords[0]<=pos[0]+dimN/2) & (coords[1]>=pos[1]-dimN*10) & (coords[1]<=pos[1]+dimN*10))
+            liste.append(ind[0].tolist())
+        else:
+            ind = np.where(((coords[0] >= pos[0]-(dimE/2)) & (coords[0] <= pos[0]+(dimE/2))))
+            liste.append(ind[0].tolist())
+    # Calculates the elevation average for the remaining LIDAR points, and asigns it to the current GPS position
+    for i in range(len(liste)):
+        gps[i,2] = np.mean(las_flt[liste[i], 2])
+
+    return gps
+
 def rem_empty(data):
     """
     Removes empty traces from the data
