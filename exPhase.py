@@ -4,8 +4,10 @@ Example of automatic picking of the soil surface using the algorithm based on ph
 import os
 import numpy as np
 import pandas as pd
+from scipy import interpolate
 import file_mgmt as fmgmt
 import basic_proc as bp
+import phasePicking_tools as phaseTools
 
 ### - Import the LIDAR data from a .las file - ##############################################################
 #############################################################################################################
@@ -158,6 +160,115 @@ for fich in file_list[1:2]:
     # Use LIDAR data for elevations
     GPS_corr = bp.lidar2gps_elev(coordLas,GPS)
     # Find dikes' positions
-    dikes, diff_clone = bp.find_dikes(GPS_corr)
+    dikes, diff_clone = bp.find_dikes(GPS_corr[:,2])
     print("dikes' positions:",dikes)
+
+    ### - Picking - #########################################################################################
+    #########################################################################################################
+
+    # Calculates the quadrature trace using the Hilbert transform
+    dat_prim = phaseTools.quad_trace(dat_trmoy)
+    # Calculates instantaneous phase
+    teta_mat = np.arctan2(dat_prim,dat_trmoy)
+    # Cosine toonly get values between 0 and 1
+    costeta_mat = np.cos(teta_mat)
+    # Calculates the Cij and twtij matrix
+    twtij, Cij = phaseTools.Ctwt_matrix(costeta_mat)
+
+    ### - Case 0 - ##########################################################################################
+    ### - If there is dikes at the very beginning AND at the very end - #####################################
+
+    # Picking de la surface de la glace
+    if len(dikes) > 0:
+        # Initialization of the final lists
+        horizons_end = []
+        xice_end =[]
+        dikes_end = []
+        xdike_end = []
+        # If there is dikes at the very beginning AND at the very end
+        if (dikes[0][0] == 0) and (dikes[-1][1] == len(GPS_corr[:,2])-1):
+            print("Case 0")
+            for i in range(len(dikes)-1):
+                if len(dikes) == 2:
+                    print("There is dikes only at the extremes of the radargram")
+                    # Defines the zone between the 2 dikes as the field
+                    field = costeta_mat[:,dikes[0][1]:dikes[-1][0]]
+                    # Isolates the portion of Cij and twtij that are associated with the field
+                    Cij_field = Cij[:,dikes[0][1]:dikes[-1][0]]
+                    twtij_field = twtij[:,dikes[0][1]:dikes[-1][0]]
+                    # Isolates the portion of original GPR data that is associated with the field
+                    dat_brut_field = dat_trmoy[:,dikes[0][1]:dikes[-1][0]]
+                    GPS_field = GPS_corr[:,2][dikes[0][1]:dikes[-1][0]]
+
+                # If there is more than 2 dikes
+                else:
+                    # Isolates traces between each pair of dikes
+                    field = costeta_mat[:,dikes[i][1]:dikes[i+1][0]]
+                    Cij_field = Cij[:,dikes[i][1]:dikes[i+1][0]]
+                    twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
+                    dat_brut_field = dat_trmoy[:,dikes[i][1]:dikes[i+1][0]]
+                    GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
+                # Horizons detection
+                hp, hp_tp, C_clone, t_clone, ign_sign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
+                # Removal of horizons that are too short
+                min_length = 25
+                long_hp = [hori for hori in hp if len(hori) > min_length]
+                # Horizons junctions
+                longer_hp, longer_hpt, signs = phaseTools.horijoin(long_hp,C_clone,t_clone,field,Lg=200,Tj=5,min_length=min_length)
+
+                # Filters horizons by sign and by length to detect the soil/ice surface. This surface is supposed to be longest and to be early on the radargram
+                # Keeps only the horizons of positive sign
+                sign_hpt = [longer_hpt[k] for k in range(len(signs)) if signs[k] > 0]
+                # Keeps only the horizons with a length at least equal to half the field
+                long_reflect = [hori for hori in sign_hpt if len(hori) > (field.shape[1]/2)]
+                list_mean = []
+                # Of the remaining horizons, we keep the one that comes the earliest
+                for reflect in long_reflect:
+                    list_mean.append(np.mean([ref[0] for ref in reflect]))
+                ice_cold = np.where(list_mean == np.min(list_mean))[0]
+
+                # For the horizon associated with soil/ice surface, we interpolate so that every trace gets a picked coordinate
+                # We add +dikes[i][1] to get the true position, relative to the whole radargram
+                ice_tr = [m[1]+dikes[i][1] for m in long_reflect[ice_cold[0]]]
+                ice_samp = [n[0] for n in long_reflect[ice_cold[0]]]
+                # Makes a numpy array containing the number of every trace
+                x_ice = np.linspace(ice_tr[0],(ice_tr[-1])-1,ice_tr[-1]-ice_tr[0])
+                # Interpolate a vertical position at every horizontal position
+                f_ice = interpolate.interp1d(ice_tr,ice_samp,kind="linear")
+                new_ice = f_ice(x_ice)
+                # Smoothing of the soil/ice surface
+                tottraces = len(x_ice)
+                win = 75
+                mov_av = np.zeros(len(x_ice))
+                halfwid = int(np.ceil(win/2))
+                mov_av[:halfwid+1] = np.mean(new_ice[:halfwid+1])
+                mov_av[tottraces-halfwid:] = np.mean(new_ice[tottraces-halfwid:])
+                for z in range(halfwid,tottraces-halfwid+1):
+                    mov_av[z] = np.mean(new_ice[z-halfwid:z+halfwid])
+
+                # Picking on the dikes
+                if len(dikes) <= 2:
+                    x_dike = [None]
+                    new_dike = [None]
+                elif i < (len(dikes)-2):
+                    dike_case = 0
+                    x_dig,new_dig = phaseTools.pick_dike(dike_case,i,dikes,Cij,twtij,Tph,mov_av)
+
+                # If dikes are just at the extremes of the radargram, adds the soil/ice surface to the final lists
+                if (any(elem is None for elem in x_dig)) and (any(elem is None for elem in new_dig)):
+                        xice_end.append(x_ice)
+                        xdike_end = None
+                        horizons_end.append(mov_av)
+                        dikes_end = None
+                else:
+                    xice_end.append(x_ice)
+                    xdike_end.append(x_dike)
+                    horizons_end.append(mov_av)
+                    dikes_end.append(new_dike)
+
+    ### - Case 1 - ##########################################################################################
+    elif (dikes[0][0] == 0) and (dikes[-1][1] != len(GPS_corr[:,2])-1):
+        pass
+
+
     

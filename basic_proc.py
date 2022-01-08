@@ -313,7 +313,7 @@ def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
     Calculates a moving average over a short window and finds dikes from the difference between elevations from LIDAR and the average. A threshold must be defined. 
 
     INPUT:
-    - elev_lidar: Elevations estimated with LIDAR data. 
+    - elev_lidar: Elevations estimated with LIDAR data.
     - dike_wid: Number of traces contained approximately over 1 dike (Default is 600).
     - data_div: Integer to define the length of the window for the moving average. For example, a value of 60 will make a window of len(elev_lidar)/60 traces long. It is recommended to use a value to get a window shorter than a dike (window length ~ dike_wid/3).
     - thresh: Threshold value. Finds the locations where (moving_average - elev_lidar) is big -> That's the positions of the dikes. Default = 0.2. To change default, look the OUTPUT diff_clone. 
@@ -346,14 +346,14 @@ def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
     dikes = []
     for elem in range(0, len(diff_norm)):
         # For dikes (diff_norm >= thresh) at the very end of the radargram
-        if (diff_norm[elem] >= thresh) & (elem > len(diff_norm)-dike_wid):
+        if (diff_norm[elem] >= thresh) and (elem > len(diff_norm)-dike_wid):
             # Checks if there is a leat another value greater than threshold
             if True in (diff_norm[elem+1:] > thresh):
                 # Adds the first value over threshold and every other one to the end
                 dikes.append((elem, len(diff_norm)-1))
                 diff_norm[elem:] = 0
         # For dikes at the very beginning of the radargram
-        elif (diff_norm[elem] >= thresh) & (elem < dike_wid):
+        elif (diff_norm[elem] >= thresh) and (elem < dike_wid):
             if True in (diff_norm[elem+1:] > thresh):
                 # Selects every value within the range of a dike width
                 dikes.append((0, np.max(np.where(diff_norm[elem+1:elem+dike_wid] > thresh)) + elem+1))
