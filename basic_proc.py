@@ -320,7 +320,7 @@ def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
 
     OUTPUT:
     - dikes: List of tuples containing dikes' positions [(first_trace_dike1,last_trace_dike1),(first_trace_dike2, last_trace_dike2),...]
-    - diff_clone: Numoy array containing the difference between moving_average and elev_lidar. If you want to change the threshold value -> plt.plot(diff_clone)
+    - diff_clone: Numpy array containing the difference between moving_average and elev_lidar. If you want to change the threshold value -> plt.plot(diff_clone)
     """
     tottraces = len(elev_lidar)
     win = int(len(elev_lidar)/data_div)
@@ -346,14 +346,14 @@ def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
     dikes = []
     for elem in range(0, len(diff_norm)):
         # For dikes (diff_norm >= thresh) at the very end of the radargram
-        if diff_norm[elem] >= thresh and (elem > len(diff_norm)-dike_wid):
+        if (diff_norm[elem] >= thresh) & (elem > len(diff_norm)-dike_wid):
             # Checks if there is a leat another value greater than threshold
             if True in (diff_norm[elem+1:] > thresh):
                 # Adds the first value over threshold and every other one to the end
                 dikes.append((elem, len(diff_norm)-1))
                 diff_norm[elem:] = 0
         # For dikes at the very beginning of the radargram
-        elif diff_norm[elem] >= thresh and (elem < dike_wid):
+        elif (diff_norm[elem] >= thresh) & (elem < dike_wid):
             if True in (diff_norm[elem+1:] > thresh):
                 # Selects every value within the range of a dike width
                 dikes.append((0, np.max(np.where(diff_norm[elem+1:elem+dike_wid] > thresh)) + elem+1))
@@ -367,6 +367,32 @@ def find_dikes(elev_lidar,dike_wid=600,data_div=60,thresh=0.2):
 
     return dikes, diff_clone
 
+def flip_rad(data_dst, isNorth):
+    """
+    Function to flip a radargram if the GPS datas are decreasing. To be confirmed: If a file is part of a grid, the radargram is presented in the direction of ascending coordinates regardless of the true direction of data acquisition.
+
+    INPUT:
+    - data_dst: GPS data
+    - isNorth: Boolean value. If True, datas are considered to have been taken in the North/South directions (parallel to the dikes)
+
+    OUTPUT:
+    - Inversion: Boolean value. If True, datas must bee flipped.
+    - data_dst: Flipped GPS data. It's not the GPR data 
+    """
+    Inversion = False
+    if isNorth:
+        for i in range(data_dst[:,1].size - 1):
+            if data_dst[:,1][i+1] < data_dst[:,1][i]:
+                Inversion = True
+                break
+    else:    
+        for i in range(data_dst[:,0].size - 1):
+            if data_dst[:,0][i+1] < data_dst[:,0][i]:
+                Inversion = True
+                break
+    if Inversion == True:
+        data_dst = np.flip(data_dst, axis=0)
+    return Inversion, data_dst     
 
 
 

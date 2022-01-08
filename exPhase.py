@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import file_mgmt as fmgmt
+import basic_proc as bp
 
 ### - Import the LIDAR data from a .las file - ##############################################################
 #############################################################################################################
@@ -39,7 +40,7 @@ for root, dirs, files in os.walk(dst_path, topdown=False):
 #############################################################################################################
 
 gridno_b = 0
-GPR_Reverso = False
+Inversion_GPR = False
 vertical_list = []
 vert_list_dst = []
 list_temp_vtk = []
@@ -49,7 +50,8 @@ list_samp_min = []
 #############################################################################################################
 
 # Problems with files 0 and 28 to 32
-for fich in file_list[1:28] + file_list[33:]:
+#for fich in file_list[1:28] + file_list[33:]:
+for fich in file_list[1:2]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -84,10 +86,78 @@ for fich in file_list[1:28] + file_list[33:]:
         # Ends the loop, continue to the next file
         continue
 
-    # Déterminer le sens des radargrammes pour une grille
-    isNorth = False  
+    # Checks the direction of GPS datas for a given grid
+    # Since we only deal with East/West files in this loop
+    isNorth = False 
+    # If the current file is not in the same grid as the previous one, checks if we need a flip 
     if isGRID and (gridno != gridno_b):
-        Inversion_GPR, ignore = pflt.change_side(GPS, isNorth)
+        Inversion_GPR, ignore = bp.flip_rad(GPS, isNorth)
+        # Store the current gridno to compare it to the next one on the next iteration
         gridno_b = gridno
 
+    # Flips GPS datas if necessary
+    Inversion, GPS = bp.flip_rad(GPS, isNorth)
+    # Flips GPR datas if necessary
+    # For grids that contains a single file, isGRID=False. These files needs to be flipped if GPS datas are decreasing.
+    if Inversion == True and isGRID == False:
+        dat = np.flip(dat,axis=1)
+    # Flipping of GPR data when GPS datas are decreasing and when the file is part of a grid
+    elif Inversion_GPR == True and isGRID == True:
+        dat = np.flip(dat,axis=1)
+
+    ### - Basic Processing - ################################################################################
+    #########################################################################################################
+
+    # Removes empty traces
+    start_t, end_t = bp.rem_empty(dat)
+    dat = dat[:,start_t:end_t]
+    # Saves a copy of the original matrix before processing
+    dat_copy = np.copy(dat)
+    # Removes empty traces from GPS data
+    GPS = GPS[start_t:end_t]
+
+    # For the picking of soil surface, we don't need the full matrix. The first 100 samples are enough
+    dat = dat[:100,:]
+    # GPR data takes values between 0 and 65536 (16 bits). 32768 is the middle value. Here we center the values around 0 for better result with the phase transformation
+    dat = dat - 32768
+    # Dewow and air waves removal on the original matrix
+    dat_copy = dat_copy - 32768
+    dat_copy = bp.deWOW(dat_copy, 18)
+    dat_copy = bp.rem_mean_trace(dat_copy, dat_copy.shape[1]/2)
+
+    # Temporal width of a phase estimation from air waves
+    # Gets the average value of every sample
+    moy = np.mean(dat,axis=1)
+    # Normalization
+    moy = moy/np.max(np.abs(moy))
+    # Finds big values. Air waves have a very high amplitude
+    big_val = np.where(moy > 0.1)
+    # Function to get the width of air waves.
+    def ranges(nums):
+        nums = sorted(set(nums))
+        gaps = [[s,e] for s,e in zip(nums,nums[1:]) if s+1 < e]
+        edges = iter(nums[:1] + sum(gaps,[]) + nums[-1:])
+        return list(zip(edges,edges))
+    # seqs is a list of tuples containing the starting and ending samples of the positive phases of air waves.
+    seqs = ranges(big_val[0])
+    # Finds the width from the first phase
+    Tph = seqs[0][1] - seqs[0][0]
+    # Removes data that are above air wave,except for 5 samples
+    dat = dat[big_val[0][0]-5:,:]
+
+    # Dewow and air waves removal from data
+    dat = bp.deWOW(dat,18)
+    dat_trmoy = bp.rem_mean_trace(dat,dat.shape[1]/2)
+    # Filtre SVD pour ondes directes et bruit
+    #dat1 = dat_trmoy[:,:int(dat.shape[1]/2)]
+    #dat2 = dat_trmoy[:,int(dat.shape[1]/2):]
+    #dat1 = phaseTool.quick_SVD(dat1,coeff=[None,4])
+    #dat2 = phaseTool.quick_SVD(dat2,coeff=[None,4])
+    #dat_filtreSVD = np.concatenate((dat1,dat2),axis=1)
+
+    # Use LIDAR data for elevations
+    GPS_corr = bp.lidar2gps_elev(coordLas,GPS)
+    # Find dikes' positions
+    dikes, diff_clone = bp.find_dikes(GPS_corr)
+    print("dikes' positions:",dikes)
     
