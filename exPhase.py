@@ -178,13 +178,13 @@ for fich in file_list[1:2]:
     ### - Case 0 - ##########################################################################################
     ### - If there is dikes at the very beginning AND at the very end - #####################################
 
-    # Picking de la surface de la glace
     if len(dikes) > 0:
         # Initialization of the final lists
         horizons_end = []
         xice_end =[]
         dikes_end = []
         xdike_end = []
+
         # If there is dikes at the very beginning AND at the very end
         if (dikes[0][0] == 0) and (dikes[-1][1] == len(GPS_corr[:,2])-1):
             print("Case 0")
@@ -208,6 +208,7 @@ for fich in file_list[1:2]:
                     twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
                     dat_brut_field = dat_trmoy[:,dikes[i][1]:dikes[i+1][0]]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
+
                 # Horizons detection
                 hp, hp_tp, C_clone, t_clone, ign_sign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
@@ -266,9 +267,74 @@ for fich in file_list[1:2]:
                     horizons_end.append(mov_av)
                     dikes_end.append(new_dike)
 
-    ### - Case 1 - ##########################################################################################
-    elif (dikes[0][0] == 0) and (dikes[-1][1] != len(GPS_corr[:,2])-1):
-        pass
+        ### - Case 1 - ######################################################################################
+        ### - If there is 1 dike at the very beginning of the radargram - ###################################
 
+        elif (dikes[0][0] == 0) and (dikes[-1][1] != len(GPS_corr[:,2])-1):
+            print("Case 1")
+            for i in range(len(dikes)):
+                # Isolates traces between each pair of dikes
+                if i == len(dikes)-1:
+                    field = costeta_mat[:,dikes[i][1]:]
+                    Cij_field = Cij[:,dikes[i][1]:]
+                    twtij_field = twtij[:,dikes[i][1]:]
+                    dat_brut_field = dat_trmoy[:,dikes[i][1]:]
+                    GPS_field = GPS_corr[:,2][dikes[i][1]:]
+                else:
+                    field = costeta_mat[:,dikes[i][1]:dikes[i+1][0]]
+                    Cij_field = Cij[:,dikes[i][1]:dikes[i+1][0]]
+                    twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
+                    dat_brut_field = dat_trmoy[:,dikes[i][1]:dikes[i+1][0]]
+                    GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
+
+        ### - Case 2 - ######################################################################################
+        ### - If there is a dike at the very end - ##########################################################
+
+        elif (dikes[0][0] != 0) and (dikes[-1][1] == len(GPS_corr[:,2])-1):
+            print("Case 2")
+            for i in range(len(dikes)):
+                # Isolates traces between each pair of dikes
+                if i == 0:
+                    field = costeta_mat[:,:dikes[i][0]]
+                    Cij_field = Cij[:,:dikes[i][0]]
+                    twtij_field = twtij[:,:dikes[i][0]]
+                    dat_brut_field = dat_trmoy[:,:dikes[i][0]]
+                    GPS_field = GPS_corr[:,2][:dikes[i][0]]
+                else:
+                    field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
+                    Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
+                    twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
+                    dat_brut_field = dat_trmoy[:,dikes[i-1][1]:dikes[i][0]]
+                    GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
+
+        ### - Case 3 - ######################################################################################
+        ### - No dikes at the extremes - ####################################################################
+    
+        elif (dikes[0][0] != 0) and (dikes[-1][1] != len(GPS_corr[:,2])-1):
+            print("Case 3")
+            for i in range(len(dikes)):
+                # Isolates traces between each pair of dikes
+                if i == 0:
+                    field = costeta_mat[:,:dikes[i][0]]
+                    Cij_field = Cij[:,:dikes[i][0]]
+                    twtij_field = twtij[:,:dikes[i][0]]
+                    dat_brut_field = dat_trmoy[:,:dikes[i][0]]
+                    GPS_field = GPS_corr[:,2][:dikes[i][0]]
+                if i == len(dikes)-1:
+                    field = costeta_mat[:,dikes[i][1]:]
+                    Cij_field = Cij[:,dikes[i][1]:]
+                    twtij_field = twtij[:,dikes[i][1]:]
+                    dat_brut_field = dat_trmoy[:,dikes[i][1]:]
+                    GPS_field = GPS_corr[:,2][dikes[i][1]:]
+                else:
+                    field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
+                    Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
+                    twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
+                    dat_brut_field = dat_trmoy[:,dikes[i-1][1]:dikes[i][0]]
+                    GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
+
+                
+
+    
 
     
