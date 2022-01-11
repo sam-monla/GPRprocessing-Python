@@ -455,7 +455,7 @@ def horijoin(horizons,Cij_clone,twtij_clone,Lg=False,Tj=False,section=0):
 
                     # Adds the horizons to the "right" list if no crossing - Remove if using Phase crossing
                     if not np.any(x_bool):
-                        left.append(pre_right[i])
+                        left.append(pre_right[j])
 
                     """
                     Phase crossing - To verify
