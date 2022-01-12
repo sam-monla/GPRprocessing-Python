@@ -779,11 +779,11 @@ def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,to
         Cij_dike[row,cols] = fil_Cij
         twtij_dike[row,cols] = fil_twtij
     # Horizons detection
-    hori_dike,hori_dike_tp,C_dike,t_dike,nosign = horipick(Cij_dike,twtij_dike,Tph,tol_C=tol_C,tolmin_t=tolmin_t,tolmax_t=tolmax_t)
+    hori_dike,hori_dike_tp,C_dike,t_dike = horipick(Cij_dike,twtij_dike,Tph,tol_C=tol_C,tolmin_t=tolmin_t,tolmax_t=tolmax_t)
     # Removes too short detected horizons 
     long_dike = [dike for dike in hori_dike if len(dike) > len_min]
     # Horizons junction
-    longer_dike,longer_diket,signs = horijoin(long_dike,C_dike,t_dike,champ=None,Lg=Lg,Tj=Tj,min_length=False)
+    longer_dike,longer_diket,signs = horijoin(long_dike,C_dike,t_dike,Lg=Lg,Tj=Tj)
     # Detects the longest horizon
     lgst_dike = max(longer_diket, key=len)
     # Position correction. Shifts the detected horizons horizontally to get true absolute positionning, since the dikes rarely begin at trace 0. 
@@ -796,7 +796,7 @@ def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,to
 
     return x_dike,t_dike
 
-def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,offset=0,smooth=75,veloc=0.1,resample=1):
+def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,header,offset=0,smooth=75,veloc=0.1,resample=1):
     """
     Function to merge results from fields and dikes picking AND apply topographic correction. I use this function mainly to correct vertical displacements due to the snow cover and to produce a clean and single object to pass to the final functions.
 
@@ -807,6 +807,7 @@ def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,offset=0,smooth=75,veloc=0.
     - t_dike: Output of pick_dike (t_dike). List of lists containing the absolute vertical positions of the picked coordinates in the dikes regions.
     - t_field: List of lists containing the absolute vertical positions of the picked coordinates in the fields regions.
     - GPS: GPS coordinates of every traces with the elevations estimated from LIDAR data.
+    - header: Header of DZT file
     - offset: Used to take into account the potential subtraction of early datas. For example, if we don't use the 5 first samples to delete air wave, we need to fix this parameter to 5. (Default is 0).
     - smooth: Integer used to define a smoothing window for the total surface (fields + dikes). Default is 75 traces.
     - veloc: Estimation of a constant EM wave velocity. Since I use this function to remove a layer of snow/ice, the default setting is 0.1 ns/m. 
@@ -864,7 +865,8 @@ def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,offset=0,smooth=75,veloc=0.
     elev_max = np.max(GPS_line)
     GPSns = np.copy(GPS_line)
     # Gets the difference between every elevation and the max elevation, and divides it by the velocity estimation for snow/ice to convert elevations to time data.
-    GPSns = ((elev_max - GPSns)/veloc)
+    # After this, divide by ns_per_zsample to convert data to sample
+    GPSns = (2*((elev_max - GPSns)/veloc))/(header["ns_per_zsample"]*1e9)
     # Keeps only the traces with picked coordinates
     GPS_ice = GPSns[int(x_tot[0]):int(x_tot[-1])+1]
     # Picks the max elevation in terms of samples (the earliest sample is the highest point of elevation)

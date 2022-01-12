@@ -486,20 +486,34 @@ for fich in file_list[1:2]:
                 dikes_end.append(new_dike)
 
     # Topographic correction - Snow layer
+    # This step shift every trace vertically so that the picked surface matches the GPS elevations converted in sample and superposed on the radargram
     if len(dikes) > 0:
-        newdata_res,GPS_final,x_tot,totliss = bp.correctTopo(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,offset=(big_val[0][0]-5),liss=75,resample=1)
+        newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,head,offset=(big_val[0][0]-5),smooth=75,resample=1)
 
-    # Vérification que tout se passe bien
+    ### - Display of data after correction for snow layer -  ################################################
+    #########################################################################################################
+
     fig = plt.figure(figsize=(10, 6))
-    ax = fig.add_subplot(111)
-    ax.set_title("Correction statique topo")
+    ax = fig.add_subplot(211)
+    ax.set_title("GPR data after basic processing")
+    maxi = 8192
+    mini = -8192
+    plt.imshow(dat_copy, cmap='bwr', vmin=mini, vmax=maxi)
+    ax.set_aspect(8)
+    plt.xlabel("Traces")
+    plt.ylabel("Samples")
+
+    ax = fig.add_subplot(212)
+    ax.set_title("Correction for snow layer")
     maxi = 8192
     mini = -8192
     plt.imshow(newdata_res, cmap='bwr', vmin=mini, vmax=maxi)
-    #plt.plot(GPS_final_plus-samp_min,"-k")
+    plt.plot(GPS_final,"-k")
     ax.set_aspect(8)
     plt.xlabel("Traces")
-    plt.ylabel("Échantillons")
+    plt.ylabel("Samples")
     plt.show()
 
     
+
+
