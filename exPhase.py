@@ -514,6 +514,25 @@ for fich in file_list[1:2]:
     plt.ylabel("Samples")
     plt.show()
 
+    ### - Create a .vts file to open in Paraview - ##########################################################
+    #########################################################################################################
+
+    outfile = "/Users/Samuel/Documents/École/Université/Maitrise/St-Louis/GPR_vtk/G{}-F{}".format(gridno[8:],fich_nom[24:])
+
+    # Only keeps GPS positions associated with the soil/ice surface
+    positions = GPS_corr[int(x_tot[0]):int(x_tot[-1])+1,:]
+    if positions[:,0][0] > positions[:,0][1]:
+        posx = np.flip(positions[:,0])
+        posz = np.flip(positions[:,2])
+    else:
+        posx = positions[:,0]
+        posz = positions[:,2]
+
+    # Creates a time vector    
+    twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0])
+
+    # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
+    bp.exportVTK(outfile,posx,twtt,newdata_res,positions)
     
 
 
