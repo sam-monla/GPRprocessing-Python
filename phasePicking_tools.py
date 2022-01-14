@@ -18,6 +18,7 @@ from itertools import groupby
 from operator import itemgetter
 from scipy import interpolate
 from tqdm import tqdm
+import basic_proc as bp
 
 def quad_trace(data):
     """
@@ -184,6 +185,7 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
     # Final horizons lists initialization
     list_horizons = []
     list_horizons_offs = []
+    list_signs = []
 
     # For each phase (tqdm is to display progress bar)
     for ph in tqdm(range(Cij.shape[0])):
@@ -250,6 +252,7 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
             # When the while loop breaks, the resulting horizon is put in list_horizons
             list_horizons.append(hori)
             list_horizons_offs.append(hori_offs)
+            list_signs.append(signe)
             # Puts impossible values in the spots that are tied to an horizon. This way, the algorithm can't put a spot in 2 different horizons and there is less point to examine. 
             Cij_term = 2*np.ones((1,len(hori)))
             twtij_term = -1*np.ones((1,len(hori)))
@@ -257,7 +260,7 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
             Cij[row,cols] = Cij_term
             twtij[row,cols] = twtij_term
 
-    return list_horizons, list_horizons_offs, Cij_clone, twtij_clone
+    return list_horizons, list_horizons_offs, Cij_clone, twtij_clone, list_signs
 
 def horijoin(horizons,Cij_clone,twtij_clone,Lg=False,Tj=False,section=0):
     """
@@ -928,3 +931,58 @@ def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,header,offset=0,smooth=75,v
     tot_liss_rad = tot_liss*resample + offset*resample
 
     return newdata_res, GPS_final, x_tot, tot_liss_rad
+
+def prep_picking_NS(data):
+    """
+    Function for preparing data of vertical GPR lines (North/South directions) to the picking of soil/ice surface. Calculates horizontal average values, keeps the highest ones and filters air wave. Keeps the earliest remaining values and creates a masks to filter the original matrix in a way that every amplitude is cancelled, except for the ones around the soil surface. I proceed this way because removing the air wave with the same filter as horizontal lines weakens the reflections of the soil surface for vertical lines. With these lines, the thickness of the snow layer is relatively constant and thin along the line, so the soil surface appears really flat and close to air waves on the radargram. For now, "this is the way" - Din Djarin
+
+    INPUT
+    - data: Data matrix from DZT file
+
+    OUTPUT
+    - mask: Matrix filled with 0 and 1 the same size of the original matrix. Multiply this matrix with the original one to highlight a zone of few samples containing the soil surface
+    - data_rng: Horizontally smoothed data matrix
+    """
+    # Running average to highlight flat reflectors
+    data_rng = bp.running_avg(data,int(data.shape[1]/20))
+    # Calculates horizontal averages (1 for each sample) and finds positive peaks
+    moy = np.mean(data_rng,axis=1)
+    moy = moy.clip(min=0)
+    moy = moy/np.max(moy)
+
+    # Derivation estimation on the mean values (finite difference)
+    deriv_moy = []
+    for i in range(len(moy)-1):
+        if i == 0:
+            deriv_moy.append(moy[i])
+        else:
+            deriv_moy.append((moy[i+1]-moy[i-1])/2)
+    # Finds the median value
+    med_deriv = np.median(deriv_moy)
+
+    # Finds every sequences of consecutive numbers for wich the average value is over median+0.01
+    zone = np.where(moy > med_deriv+0.01)[0]
+    seq = []
+    for k, g in groupby(enumerate(zone), lambda ix : ix[0] - ix[1]):
+        seq.append(list(map(itemgetter(1),g)))
+
+    # Removes sequences with at least 1 value hugher than 0.2. The goal here is to remove the sequence of phases corresponding to air waves.
+    new_seq = []
+    for liste in seq:
+        verif = np.asarray(moy[liste[0]:liste[-1]+1]) > 0.2
+        if np.any(verif):
+            continue
+        if seq.index(liste) > 3:
+            continue
+        else:
+            new_seq.append(liste)
+    del seq
+
+    # Creation of a mask. Multiply this mask with the original matrix and with the matrix converted to phase.
+    mask = np.zeros((data.shape[0],1))
+    mask[new_seq[0][0]-4:new_seq[-1][0]-3] = 1
+
+    return mask, data_rng
+
+
+

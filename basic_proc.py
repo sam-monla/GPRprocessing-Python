@@ -143,6 +143,34 @@ def deWOW(data,window):
     print('done with dewow')
     return newdata
 
+def running_avg(data,fen):
+    """
+    Function for horizontal smoothing on radargram.
+    """
+    data = np.asarray(data)
+    tottraces = data.shape[1]
+
+    newdata = np.zeros(data.shape)
+    halfwid = int(np.ceil(fen/2))
+
+    # First traces
+    Col_1D = np.mean(data[:,0:halfwid+1],axis=1)
+    Col_2D = np.reshape(Col_1D,(Col_1D.shape[0],1))
+    newdata[:,0:halfwid+1] = Col_2D
+
+    # Middle traces
+    for trace in range(halfwid,tottraces-halfwid+1):
+        dep_fen = int(trace-halfwid)
+        fin_fen = int(trace+halfwid)
+        newdata[:,trace] = np.mean(data[:,dep_fen:fin_fen+1],axis=1)
+
+    # Last traces
+    Colo_1D = np.mean(data[:,tottraces-halfwid:tottraces+1],axis=1)
+    Colo_2D = np.reshape(Colo_1D,(Colo_1D.shape[0],1))
+    newdata[:,tottraces-halfwid:tottraces+1] = Colo_2D
+    
+    return newdata
+
 def rem_mean_trace(data,ntraces):
     
     '''

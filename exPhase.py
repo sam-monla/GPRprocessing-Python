@@ -54,7 +54,7 @@ list_samp_min = []
 
 # Problems with files 0 and 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[1:2]:
+for fich in file_list[1:3]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -211,7 +211,7 @@ for fich in file_list[1:2]:
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
 
                 # Horizons detection
-                hp, hp_tp, C_clone, t_clone = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
+                hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -289,7 +289,7 @@ for fich in file_list[1:2]:
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
 
                 # Horizons detection
-                hp, hp_tp, C_clone, t_clone = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
+                hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -358,7 +358,7 @@ for fich in file_list[1:2]:
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
 
                 # Horizons detection   
-                hp, hp_tp,C_clone, t_clone = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
+                hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too small
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -435,7 +435,7 @@ for fich in file_list[1:2]:
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
 
                 # Horizons detection
-                hp, hp_tp,C_clone, t_clone = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
+                hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -531,8 +531,142 @@ for fich in file_list[1:2]:
     # Creates a time vector    
     twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0])
 
+    # Deletes some stored data to avoid memory problems when exporting to VTK
+    del dat
+    del dat_copy
+    del GPS
+    del moy
+    del dat_trmoy
+    del ignore
+    del GPS_corr
+    del new_ice
+    del dat_prim
+    del costeta_mat
+    del teta_mat
+    del twtij
+    del Cij
+    del field
+    del Cij_field
+    del twtij_field
+    del dat_brut_field
+    del GPS_field
+    del C_clone
+    del t_clone
+    del GPS_final
+
     # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
     bp.exportVTK(outfile,posx,twtt,newdata_res,positions)
+
+    del newdata_res
+
+### - Processing of vertical GPR lines (North/South) (Parallel to dikes) (No dikes) - #######################
+#############################################################################################################
+
+# The steps are very similar to the horizontal lines
+
+Inversion_GPR = False
+for fichN in vertical_list:
+
+    # Checks wich files are aquired in GRID mode
+    num = fichN.find('GRID____')
+    gridno = fichN[num:num+11]
+    fich_nom = fichN[num:num+27]
+    isGRID = True if sum(x.count(gridno+'.3DS') for x in vertical_list) > 1 else False
+
+    # Importer les données des fichiers DZT et dst
+    # Import data from DZT (GPR) and dst (GPS) files
+    head, dat = fmgmt.readDZT(fichN, [2])
+    ntrace_ini = dat.shape[1]
+    GPS = pd.read_csv(vert_list_dst[vertical_list.index(fichN)], sep="\t")
+    # Makes a 3 columns (X,Y,Z) matrix with the GPS data
+    GPS = np.hstack((np.array([GPS['Xshot']]).T, np.array([GPS['Yshot']]).T, np.array([GPS['Zshot']]).T))
+
+    # Determines the orientation (North or South) of the radargrams for a given grid
+    if isGRID and (gridno != gridno_b):
+        Inversion_GPR, ignore = bp.flip_rad(GPS, isNorth)
+        gridno_b = gridno
+
+    # Changes the orientation of GPS data if necessary
+    Inversion, GPS = bp.flip_rad(GPS, isNorth)
+    # Changer le sens des données DZT, si nécessaire
+    if Inversion == True and isGRID == False:
+        dat = np.flip(dat,axis=1)
+    elif Inversion_GPR == True and isGRID == True:
+        dat = np.flip(dat,axis=1)
+
+    # Removal of empty traces
+    deb, fin = bp.rem_empty(dat)
+    dat = dat[:,deb:fin]
+    dat_copy = np.copy(dat)
+    GPS = GPS[deb:fin]
+
+    # For the picking of soil surface, we don't need the full matrix. The first 100 samples are enough
+    dat = dat[:100,:]
+    # GPR data takes values between 0 and 65536 (16 bits). 32768 is the middle value. Here we center the values around 0 for better result with the phase transformation
+    dat = dat - 32768
+    dat_copy = dat_copy - 32768
+    dat = bp.deWOW(dat,18)
+    dat_copy = bp.deWOW(dat_copy, 18)
+
+    # Use LIDAR data for elevations
+    GPS_corr = bp.lidar2gps_elev(coordLas,GPS)
+
+    # Masks every part of data surrounding the soil reflection - Only keeps neighbouring data
+    # Look the prep_picking_NS() description for more details
+    mask, data_rng = phaseTools.prep_picking_NS(dat)
+
+    # Calculates the quadrature trace using the Hilbert transform
+    dat_prim_moy = phaseTools.quad_trace(data_rng)
+    # Calculates instantaneous phase
+    teta_mat_moy = np.arctan2(dat_prim_moy,data_rng)
+    # Cosine toonly get values between 0 and 1
+    costeta_mat_moy = np.cos(teta_mat_moy)
+
+    # Apply masks
+    data_rng = mask*data_rng
+    costeta_mat_moy = mask*costeta_mat_moy
+
+    # Horizons detection
+    twtij, Cij = phaseTools.Ctwt_matrix(costeta_mat_moy)
+    hp, tphp, C_clone, t_clone, signs = phaseTools.horipick(Cij,twtij,Tph=5,tol_C=0.65,tolmin_t=0.2,tolmax_t=2)
+    # Filters horizons of negative phase
+    new_hp = []
+    for i in range(len(hp)):
+        if signs[i] < 0:
+            continue
+        else:
+            new_hp.append(hp[i])
+    # Horizons junctions
+    new_hp = [hori for hori in new_hp if len(hori) > 25]
+    long_hp, long_hpt, signs1 = phaseTools.horijoin(new_hp,C_clone,t_clone,champ=None,Lg=500,Tj=3)
+    # Filters short horizons
+    longer_hp = [hori for hori in long_hpt if len(hori) > 8000]
+
+    # Smoothing and interpolation
+    ice_tr = [m[1] for m in longer_hp[0]]
+    ice_temp = [n[0] for n in longer_hp[0]]
+    x_ice = np.linspace(ice_tr[0],ice_tr[-1]-1,ice_tr[-1]-ice_tr[0])
+    f_ice = interpolate.interp1d(ice_tr,ice_temp,kind="linear")
+    new_ice = f_ice(x_ice)
+    # Smoothing
+    tottraces = len(x_ice)
+    fen = 75
+    moy_mobil = np.zeros(len(x_ice))
+    halfwid = int(np.ceil(fen/2))
+    moy_mobil[:halfwid+1] = np.mean(new_ice[:halfwid+1])
+    moy_mobil[tottraces-halfwid:] = np.mean(new_ice[tottraces-halfwid:])
+    for z in range(halfwid,tottraces-halfwid+1):
+        moy_mobil[z] = np.mean(new_ice[z-halfwid:z+halfwid])
+
+    # Topographic correction - Removal of snow layer
+    newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,None,x_ice,None,moy_mobil,GPS_corr,offset=0,liss=75,resample=1)
+
+    
+
+    
+
+    
+
     
 
 
