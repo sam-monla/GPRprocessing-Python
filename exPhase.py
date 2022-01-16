@@ -54,7 +54,7 @@ list_samp_min = []
 
 # Problems with files 0 and 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[1:3]:
+for fich in file_list[1:3] + file_list[33:35]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -537,7 +537,6 @@ for fich in file_list[1:3]:
     del GPS
     del moy
     del dat_trmoy
-    del ignore
     del GPS_corr
     del new_ice
     del dat_prim
@@ -638,7 +637,7 @@ for fichN in vertical_list:
             new_hp.append(hp[i])
     # Horizons junctions
     new_hp = [hori for hori in new_hp if len(hori) > 25]
-    long_hp, long_hpt, signs1 = phaseTools.horijoin(new_hp,C_clone,t_clone,champ=None,Lg=500,Tj=3)
+    long_hp, long_hpt, signs1 = phaseTools.horijoin(new_hp,C_clone,t_clone,Lg=500,Tj=3)
     # Filters short horizons
     longer_hp = [hori for hori in long_hpt if len(hori) > 8000]
 
@@ -659,7 +658,35 @@ for fichN in vertical_list:
         moy_mobil[z] = np.mean(new_ice[z-halfwid:z+halfwid])
 
     # Topographic correction - Removal of snow layer
-    newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,None,x_ice,None,moy_mobil,GPS_corr,offset=0,liss=75,resample=1)
+    newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,None,x_ice,None,moy_mobil,GPS_corr,head,offset=0,smooth=75,resample=1)
+
+    ### - Display of topographic correction - ###############################################################
+    #########################################################################################################
+
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(211)
+    ax.set_title("GPR data after basic processing")
+    maxi = 8192
+    mini = -8192
+    plt.imshow(dat_copy, cmap='bwr', vmin=mini, vmax=maxi)
+    ax.set_aspect(8)
+    plt.xlabel("Traces")
+    plt.ylabel("Samples")
+
+    ax = fig.add_subplot(212)
+    ax.set_title("Correction for snow layer")
+    maxi = 8192
+    mini = -8192
+    plt.imshow(newdata_res, cmap='bwr', vmin=mini, vmax=maxi)
+    plt.plot(GPS_final,"-k")
+    ax.set_aspect(8)
+    plt.xlabel("Traces")
+    plt.ylabel("Samples")
+    plt.show()
+
+    ### - Create a .vts file to open in Paraview - ##########################################################
+    ######################################################################################################### 
+
 
     
 

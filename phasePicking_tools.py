@@ -782,7 +782,7 @@ def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,to
         Cij_dike[row,cols] = fil_Cij
         twtij_dike[row,cols] = fil_twtij
     # Horizons detection
-    hori_dike,hori_dike_tp,C_dike,t_dike = horipick(Cij_dike,twtij_dike,Tph,tol_C=tol_C,tolmin_t=tolmin_t,tolmax_t=tolmax_t)
+    hori_dike,hori_dike_tp,C_dike,t_dike,nosign = horipick(Cij_dike,twtij_dike,Tph,tol_C=tol_C,tolmin_t=tolmin_t,tolmax_t=tolmax_t)
     # Removes too short detected horizons 
     long_dike = [dike for dike in hori_dike if len(dike) > len_min]
     # Horizons junction
