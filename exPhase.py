@@ -555,6 +555,8 @@ for fich in file_list[1:3] + file_list[33:35]:
 
     # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
     bp.exportVTK(outfile,posx,twtt,newdata_res,positions)
+    # Adds the coordinates of the final data to a list that will be used for North/South (vertical) lines
+    list_temp_vtk.append(positions)
 
     del newdata_res
 
@@ -685,7 +687,111 @@ for fichN in vertical_list:
     plt.show()
 
     ### - Create a .vts file to open in Paraview - ##########################################################
-    ######################################################################################################### 
+    #########################################################################################################
+    
+    # Only keeps GPS points associated with the picked soil/ice surface
+    positions = GPS_corr[int(x_tot[0]):int(x_tot[-1])+1,:]
+    if positions[:,1][0] > positions[:,1][1]:
+        posx = np.flip(positions[:,0])
+        posy = np.flip(positions[:,1])
+        posz = np.flip(positions[:,2])
+    else:
+        posx = positions[:,0]
+        posy = positions[:,1]
+        posz = positions[:,2]
+    # Creation of a time vector    
+    twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0]) 
+
+    ### - Aligns vertical GPR lines with the horizontal ones - ##############################################
+    time_surf = []
+    # For every horizontal line, defines a rectangle from the most extreme coordinates
+    for hline in list_temp_vtk:
+        west = np.min(positions[:,0])
+        east = np.max(positions[:,0])
+        south = np.min(hline[:,1])
+        north = np.max(hline[:,1])
+
+        # Selects every GPS coordinates of the horizontal line that is included in the rectangle
+        h_ind_GPSselect = (hline[:,0]>=west) & (hline[:,1]>=south) & (hline[:,0]<=east) & (hline[:,1]<=north)
+        hGPS_select = hline[h_ind_GPSselect]
+        # Selects every GPS coordinates of the vertical line that is included in the rectangle
+        v_ind_GPSselect = (positions[:,0]>=west) & (positions[:,1]>=south) & (positions[:,0]<=east) & (positions[:,1]<=north)
+        vGPS_select = positions[v_ind_GPSselect]
+
+        if (hGPS_select.shape[0] > 0) & (vGPS_select.shape[0] > 0):
+            # Defines a new rectangle. west and east are defined from the vertical line, north and south from horizontal line. The goal is to define a smaller zone around the point of intersection of the 2 GPR lines
+            west = np.min(vGPS_select[:,0])
+            east = np.max(vGPS_select[:,0])
+            south = np.min(hGPS_select[:,1])
+            north = np.max(hGPS_select[:,1])
+
+            # Only keeps the coordinates of hGPS_select that are included in the new smaller rectangle
+            hind_fin = (hGPS_select[:,0]>=west) & (hGPS_select[:,1]>=south) & (hGPS_select[:,0]<=east) & (hGPS_select[:,1]<=north)
+            hGPS_fin = hGPS_select[hind_fin]
+            # Only keeps the coordinates of vGPS_select that are included in the new smaller rectangle
+            vind_fin = (vGPS_select[:,0]>=west) & (vGPS_select[:,1]>=south) & (vGPS_select[:,0]<=east) & (vGPS_select[:,1]<=north)
+            vGPS_fin = vGPS_select[vind_fin]
+
+            if (hGPS_fin.shape[0] > 0) & (vGPS_fin.shape[0] > 0):
+                # Calculates a linear equation from hGPS_fin coordinates
+                slop1 = (hGPS_fin[-1,1]-hGPS_fin[0,1])/(hGPS_fin[-1,0]-hGPS_fin[0,0])
+                b1 = hGPS_fin[-1,1] - slop1*hGPS_fin[-1,0]
+                # Calculates a linear equation from vGPS_fin coordinates
+                slop2 = (vGPS_fin[-1,1]-vGPS_fin[0,1])/(vGPS_fin[-1,0]-vGPS_fin[0,0])
+                b2 = vGPS_fin[-1,1] - slop2*vGPS_fin[-1,0]
+                # Finds the x coordinate of the intersection
+                xint = (b2-b1)/(slop1-slop2)
+                # Finds the y coordinate of the intersection
+                yint = slop1*xint+b1
+
+                # Finds the closest GPS point to the intersection location
+                GPS_int = min(hGPS_fin[:,0], key=lambda x:abs(x-xint))
+                posGPSint = np.where(hGPS_fin[:,0] == GPS_int)
+                # Finds the maximum elevation of the horizontal line
+                elev_max = np.min(hline[:,2])
+                # Finds the elevation difference between the intersection point and the max elevation
+                off_set = hline[posGPSint[0][0],2] - elev_max
+                time_surf.append(off_set)
+            else:
+                continue
+        else:
+            continue
+    
+    """
+    If we apply the code on a selection of GPR lines only, including some vertical lines, we must insure there is at least 1 crossing between the vertical line and one horizontal line. Otherwise, time_surf remains empty.
+    """
+    twtt = twtt - twtt[0]
+    if len(time_surf) == 0:
+        print("time_surf is empty!")
+        continue
+    else:
+        diff_elev_mean = np.mean(time_surf)*(head["ns_per_zsample"]*1e9)
+        newtwtt = twtt + diff_elev_mean
+
+    outfile = "/Users/Samuel/Documents/École/Université/Maitrise/St-Louis/GPR_vtk/G{}-F{}".format(gridno[8:],fich_nom[24:])
+    
+    del data_rng
+    del dat_prim_moy
+    del teta_mat_moy
+    del costeta_mat_moy
+    del twtij
+    del Cij
+    del C_clone
+    del t_clone
+    del dat
+    del dat_copy
+    del GPS
+    del GPS_final
+    del GPS_corr
+    del hGPS_select
+    del vGPS_select
+    del hGPS_fin
+    del vGPS_fin
+
+    bp.exportVTK(outfile,posy,newtwtt,newdata_res,positions)
+
+    del newdata_res
+ 
 
 
     
