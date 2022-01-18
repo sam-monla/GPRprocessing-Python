@@ -488,7 +488,7 @@ for fich in file_list[1:3] + file_list[33:35]:
     # Topographic correction - Snow layer
     # This step shift every trace vertically so that the picked surface matches the GPS elevations converted in sample and superposed on the radargram
     if len(dikes) > 0:
-        newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,head,offset=(big_val[0][0]-5),smooth=75,resample=1)
+        newdata_res,GPS_final,x_tot,totliss,shifts = phaseTools.snow_corr(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,head,offset=(big_val[0][0]-5),smooth=75,resample=1)
 
     ### - Display of data after correction for snow layer -  ################################################
     #########################################################################################################
@@ -530,6 +530,21 @@ for fich in file_list[1:3] + file_list[33:35]:
 
     # Creates a time vector    
     twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0])
+    # Adjusts the time vector depending on the topographic correction
+    elevdiff = GPS_final-np.min(GPS_final)
+    etime = 2*elevdiff/0.1
+    timeStep=twtt[3]-twtt[2]
+    tshift = (np.round(etime/timeStep)).astype(int)
+    maxup = np.max(tshift)
+    newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata_res.shape[0])
+
+    # Finds the max GPS elevation
+    samp_min = np.min(GPS_final)
+    # Removes everything that comes earlier than the max elevation
+    newdata_res = newdata_res[int(samp_min)-2:,:]
+    newtwtt = newtwtt[int(samp_min)-2:]
+    # Substracts temporal delay caused by empty samples
+    newtwtt = newtwtt - newtwtt[0]
 
     # Deletes some stored data to avoid memory problems when exporting to VTK
     del dat
@@ -551,12 +566,12 @@ for fich in file_list[1:3] + file_list[33:35]:
     del GPS_field
     del C_clone
     del t_clone
-    del GPS_final
 
     # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
-    bp.exportVTK(outfile,posx,twtt,newdata_res,positions)
+    bp.exportVTK(outfile,posx,newtwtt,newdata_res,positions)
     # Adds the coordinates of the final data to a list that will be used for North/South (vertical) lines
     list_temp_vtk.append(positions)
+    positions[:,2] = GPS_final-samp_min
 
     del newdata_res
 
@@ -660,7 +675,7 @@ for fichN in vertical_list:
         moy_mobil[z] = np.mean(new_ice[z-halfwid:z+halfwid])
 
     # Topographic correction - Removal of snow layer
-    newdata_res,GPS_final,x_tot,totliss = phaseTools.snow_corr(dat_copy,None,x_ice,None,moy_mobil,GPS_corr,head,offset=0,smooth=75,resample=1)
+    newdata_res,GPS_final,x_tot,totliss,shifts = phaseTools.snow_corr(dat_copy,None,x_ice,None,moy_mobil,GPS_corr,head,offset=0,smooth=75,resample=1)
 
     ### - Display of topographic correction - ###############################################################
     #########################################################################################################
@@ -701,6 +716,19 @@ for fichN in vertical_list:
         posz = positions[:,2]
     # Creation of a time vector    
     twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0]) 
+    # Adjusts the time vector depending on the topographic correction
+    elevdiff = GPS_final-np.min(GPS_final)
+    etime = 2*elevdiff/0.1
+    timeStep=twtt[3]-twtt[2]
+    tshift = (np.round(etime/timeStep)).astype(int)
+    maxup = np.max(tshift)
+    newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata_res.shape[0])
+
+    # Finds the max GPS elevation
+    samp_min = np.min(GPS_final)
+    # Removes everything that comes before this max elevation
+    newdata_res = newdata_res[int(samp_min)-2:,:]
+    newtwtt = newtwtt[int(samp_min)-2:]
 
     ### - Aligns vertical GPR lines with the horizontal ones - ##############################################
     time_surf = []
@@ -750,7 +778,8 @@ for fichN in vertical_list:
                 # Finds the maximum elevation of the horizontal line
                 elev_max = np.min(hline[:,2])
                 # Finds the elevation difference between the intersection point and the max elevation
-                off_set = hline[posGPSint[0][0],2] - elev_max
+                # 0.1 is the estimated velocity of EM waves in snow
+                off_set = ((2*(hline[posGPSint[0][0],2] - elev_max))/0.1)/(head["ns_per_zsample"]*1e9)
                 time_surf.append(off_set)
             else:
                 continue
@@ -760,13 +789,13 @@ for fichN in vertical_list:
     """
     If we apply the code on a selection of GPR lines only, including some vertical lines, we must insure there is at least 1 crossing between the vertical line and one horizontal line. Otherwise, time_surf remains empty.
     """
-    twtt = twtt - twtt[0]
+    newtwtt = newtwtt - newtwtt[0]
     if len(time_surf) == 0:
         print("time_surf is empty!")
         continue
     else:
         diff_elev_mean = np.mean(time_surf)*(head["ns_per_zsample"]*1e9)
-        newtwtt = twtt + diff_elev_mean
+        newtwtt = newtwtt + diff_elev_mean
 
     outfile = "/Users/Samuel/Documents/École/Université/Maitrise/St-Louis/GPR_vtk/G{}-F{}".format(gridno[8:],fich_nom[24:])
     
@@ -781,7 +810,6 @@ for fichN in vertical_list:
     del dat
     del dat_copy
     del GPS
-    del GPS_final
     del GPS_corr
     del hGPS_select
     del vGPS_select

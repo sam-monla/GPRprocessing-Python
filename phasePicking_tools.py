@@ -930,7 +930,7 @@ def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,header,offset=0,smooth=75,v
     # Vertical positions of the picked surface at every trace, as a single object
     tot_liss_rad = tot_liss*resample + offset*resample
 
-    return newdata_res, GPS_final, x_tot, tot_liss_rad
+    return newdata_res, GPS_final, x_tot, tot_liss_rad, shift_list_samp
 
 def prep_picking_NS(data):
     """
