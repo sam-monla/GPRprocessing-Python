@@ -54,7 +54,7 @@ list_samp_min = []
 
 # Problems with files 0 and 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[1:3] + file_list[33:35]:
+for fich in file_list[1:3]: #+ file_list[33:35]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -485,11 +485,31 @@ for fich in file_list[1:3] + file_list[33:35]:
                 horizons_end.append(mov_av)
                 dikes_end.append(new_dike)
 
-    # Topographic correction - Snow layer
-    # This step shift every trace vertically so that the picked surface matches the GPS elevations converted in sample and superposed on the radargram
-    if len(dikes) > 0:
-        newdata_res,GPS_final,x_tot,totliss,shifts = phaseTools.snow_corr(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,head,offset=(big_val[0][0]-5),smooth=75,resample=1)
+    ### - Topographic correction - Snow layer - ############################################################
+    ########################################################################################################
 
+    # This step shift every trace vertically so that the picked surface matches the GPS elevations converted in sample and superposed on the radargram
+    """
+    # Concatenates and smooths the horizons selected as the ice/soil surface
+    x_tot,tot_smooth = phaseTools.surface_maker(xice_end,horizons_end,xdike_end,dikes_end)
+    print(x_tot[0],x_tot[-1])
+    # Only keeps GPS positions associated with the soil/ice surface
+        # Keeps only the traces with picked coordinates
+    positions = GPS_corr[int(x_tot[0]):int(x_tot[-1])+1,:]
+    if positions[:,0][0] > positions[:,0][1]:
+        posx = np.flip(positions[:,0])
+        posz = np.flip(positions[:,2])
+    else:
+        posx = positions[:,0]
+        posz = positions[:,2]
+    # Creates a time vector    
+    twtt = np.linspace(0,dat_copy.shape[0]*((head["ns_per_zsample"]*1e9)),dat_copy.shape[0])
+    # Topographic correction
+    newdata_res,newtwtt,GPS_final = phaseTools.snow_corr_2022(dat_copy,posz,twtt,posx,head,offset=(big_val[0][0]-5))
+    """
+
+    if len(dikes) > 0:
+        newdata_res,GPS_final,x_tot,totliss,fuckno = phaseTools.snow_corr(dat_copy,xdike_end,xice_end,dikes_end,horizons_end,GPS_corr,head,offset=(big_val[0][0]-5),smooth=75,resample=1)
     ### - Display of data after correction for snow layer -  ################################################
     #########################################################################################################
 
@@ -531,18 +551,18 @@ for fich in file_list[1:3] + file_list[33:35]:
     # Creates a time vector    
     twtt = np.linspace(0,newdata_res.shape[0]*((head["ns_per_zsample"]*1e9)),newdata_res.shape[0])
     # Adjusts the time vector depending on the topographic correction
-    elevdiff = GPS_final-np.min(GPS_final)
-    etime = 2*elevdiff/0.1
-    timeStep=twtt[3]-twtt[2]
-    tshift = (np.round(etime/timeStep)).astype(int)
-    maxup = np.max(tshift)
-    newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata_res.shape[0])
+    #elevdiff = GPS_final-np.min(GPS_final)
+    #etime = 2*elevdiff/0.1
+    #timeStep=twtt[3]-twtt[2]
+    #tshift = (np.round(etime/timeStep)).astype(int)
+    #maxup = np.max(tshift)
+    #newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata_res.shape[0])
 
     # Finds the max GPS elevation
     samp_min = np.min(GPS_final)
     # Removes everything that comes earlier than the max elevation
     newdata_res = newdata_res[int(samp_min)-2:,:]
-    newtwtt = newtwtt[int(samp_min)-2:]
+    newtwtt = twtt[int(samp_min)-2:]
     # Substracts temporal delay caused by empty samples
     newtwtt = newtwtt - newtwtt[0]
 
@@ -570,10 +590,10 @@ for fich in file_list[1:3] + file_list[33:35]:
     # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
     bp.exportVTK(outfile,posx,newtwtt,newdata_res,positions)
     # Adds the coordinates of the final data to a list that will be used for North/South (vertical) lines
-    list_temp_vtk.append(positions)
-    positions[:,2] = GPS_final-samp_min
+    #list_temp_vtk.append(positions)
+    #positions[:,2] = GPS_final-samp_min
 
-    del newdata_res
+    #del newdata_res
 
 ### - Processing of vertical GPR lines (North/South) (Parallel to dikes) (No dikes) - #######################
 #############################################################################################################

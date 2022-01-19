@@ -932,6 +932,80 @@ def snow_corr(data,x_dike,x_field,t_dike,t_field,GPS,header,offset=0,smooth=75,v
 
     return newdata_res, GPS_final, x_tot, tot_liss_rad, shift_list_samp
 
+def surface_maker(x_field,t_field,x_dike,t_dike,smooth=75):
+    if (x_dike != None) and (t_dike != None):
+        # Concatenate all lists in the right order
+        pos_hori = []
+        pos_verti = []
+        for i in range(len(x_dike)):
+            pos_hori.append(x_field[i])
+            pos_hori.append(x_dike[i])
+            pos_verti.append(t_field[i])
+            pos_verti.append(t_dike[i])
+        pos_hori.append(x_field[-1])
+        pos_verti.append(t_field[-1])
+        # Concatenates
+        pos_hori = [n for m in pos_hori for n in m]
+        pos_verti = [p for o in pos_verti for p in o]
+
+        # Interpolation - 1 point at every trace
+        x_tot = np.linspace(pos_hori[0],pos_hori[-1],pos_hori[-1]-pos_hori[0]+1)
+        f_tot = interpolate.interp1d(pos_hori,pos_verti,kind="linear")
+        temps_tot = f_tot(x_tot)
+
+        # Smoothing
+        tottraces = len(x_tot)
+        tot_liss = np.zeros(len(x_tot))
+        halfwid_tot = int(np.ceil(smooth/2))
+        # First traces
+        tot_liss[:halfwid_tot+1] = np.mean(temps_tot[:halfwid_tot+1])
+        # Last traces
+        tot_liss[tottraces-halfwid_tot:] = np.mean(temps_tot[tottraces-halfwid_tot:])
+        # Assign the mean value of the window to the middle element
+        for lt in range(halfwid_tot,tottraces-halfwid_tot+1):
+            tot_liss[lt] = np.mean(temps_tot[lt-halfwid_tot:lt+halfwid_tot])
+
+    # If no dikes, just make sure there is 1 point at every trace
+    else:
+        x_tot = np.linspace(x_field[0],x_field[-1],x_field[-1]-x_field[0]+1)
+        tot_liss = t_field
+    
+    return x_tot,tot_liss
+
+def snow_corr_2022(data,TopoVal,twtt,profilePos,header,offset=0,velocity=0.1):
+    # Positionning of GPS data on the radargram
+    # Gets the elevation estimated from LIDAR data
+    elev = interpolate.pchip_interpolate(profilePos,TopoVal,profilePos)
+    #elev = GPS[:,2]
+    # Finds the difference between each elevation and the max elevation (max elevation = min sample)
+    elevdiff = elev-np.min(elev)
+    # Turn each elevation point into a two way travel-time shift.
+    # It's two-way travel time
+    etime = 2*elevdiff/velocity
+    timeStep=twtt[3]-twtt[2]
+    # For radargram display
+    #GPS_rad = etime/(header["ns_per_zsample"]*1e9)
+    # Calculate the time shift for each trace
+    tshift = (np.round(etime/timeStep)).astype(int)
+    maxup = np.max(tshift)
+    # We want the highest elevation to be zero time.
+    # Need to shift by the greatest amount, where we are the lowest
+    tshift = np.max(tshift) - tshift
+    # Make new datamatrix
+    newdata = np.empty((data.shape[0]+maxup,data.shape[1]))
+    newdata[:] = np.nan
+    # Set new twtt
+    newtwtt = np.linspace(0, twtt[-1] + maxup*timeStep, newdata.shape[0])
+    nsamples = len(twtt)
+    # Enter every trace at the right place into newdata
+    for pos in range(0,len(profilePos)):
+        newdata[tshift[pos]:tshift[pos]+nsamples ,pos] = np.squeeze(data[:,pos])
+
+    # New positionning of GPS data on radargram
+    GPS_rad_final = etime + tshift + offset
+
+    return newdata, newtwtt, GPS_rad_final
+
 def prep_picking_NS(data):
     """
     Function for preparing data of vertical GPR lines (North/South directions) to the picking of soil/ice surface. Calculates horizontal average values, keeps the highest ones and filters air wave. Keeps the earliest remaining values and creates a masks to filter the original matrix in a way that every amplitude is cancelled, except for the ones around the soil surface. I proceed this way because removing the air wave with the same filter as horizontal lines weakens the reflections of the soil surface for vertical lines. With these lines, the thickness of the snow layer is relatively constant and thin along the line, so the soil surface appears really flat and close to air waves on the radargram. For now, "this is the way" - Din Djarin
