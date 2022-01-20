@@ -54,7 +54,8 @@ list_samp_min = []
 #############################################################################################################
 
 # Problems with files 0 and 28 to 32
-for fich in file_list[1:28] + file_list[33:]:
+#for fich in file_list[1:28] + file_list[33:]:
+for fich in file_list[3:5]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -152,11 +153,11 @@ for fich in file_list[1:28] + file_list[33:]:
     dat = bp.deWOW(dat,18)
     dat_trmoy = bp.rem_mean_trace(dat,dat.shape[1]/2)
     # Filtre SVD pour ondes directes et bruit
-    #dat1 = dat_trmoy[:,:int(dat.shape[1]/2)]
-    #dat2 = dat_trmoy[:,int(dat.shape[1]/2):]
-    #dat1 = phaseTool.quick_SVD(dat1,coeff=[None,4])
-    #dat2 = phaseTool.quick_SVD(dat2,coeff=[None,4])
-    #dat_filtreSVD = np.concatenate((dat1,dat2),axis=1)
+    dat1 = dat_trmoy[:,:int(dat.shape[1]/2)]
+    dat2 = dat_trmoy[:,int(dat.shape[1]/2):]
+    dat1 = bp.quick_SVD(dat1,coeff=[None,4])
+    dat2 = bp.quick_SVD(dat2,coeff=[None,4])
+    dat_filtreSVD = np.concatenate((dat1,dat2),axis=1)
 
     # Use LIDAR data for elevations
     GPS_corr = bp.lidar2gps_elev(coordLas,GPS)
@@ -168,9 +169,9 @@ for fich in file_list[1:28] + file_list[33:]:
     #########################################################################################################
 
     # Calculates the quadrature trace using the Hilbert transform
-    dat_prim = phaseTools.quad_trace(dat_trmoy)
+    dat_prim = phaseTools.quad_trace(dat_filtreSVD)
     # Calculates instantaneous phase
-    teta_mat = np.arctan2(dat_prim,dat_trmoy)
+    teta_mat = np.arctan2(dat_prim,dat_filtreSVD)
     # Cosine toonly get values between 0 and 1
     costeta_mat = np.cos(teta_mat)
     # Calculates the Cij and twtij matrix
@@ -198,7 +199,7 @@ for fich in file_list[1:28] + file_list[33:]:
                     Cij_field = Cij[:,dikes[0][1]:dikes[-1][0]]
                     twtij_field = twtij[:,dikes[0][1]:dikes[-1][0]]
                     # Isolates the portion of original GPR data that is associated with the field
-                    dat_brut_field = dat_trmoy[:,dikes[0][1]:dikes[-1][0]]
+                    dat_brut_field = dat_filtreSVD[:,dikes[0][1]:dikes[-1][0]]
                     GPS_field = GPS_corr[:,2][dikes[0][1]:dikes[-1][0]]
 
                 # If there is more than 2 dikes
@@ -207,7 +208,7 @@ for fich in file_list[1:28] + file_list[33:]:
                     field = costeta_mat[:,dikes[i][1]:dikes[i+1][0]]
                     Cij_field = Cij[:,dikes[i][1]:dikes[i+1][0]]
                     twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
-                    dat_brut_field = dat_trmoy[:,dikes[i][1]:dikes[i+1][0]]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i][1]:dikes[i+1][0]]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
 
                 # Horizons detection
@@ -279,13 +280,13 @@ for fich in file_list[1:28] + file_list[33:]:
                     field = costeta_mat[:,dikes[i][1]:]
                     Cij_field = Cij[:,dikes[i][1]:]
                     twtij_field = twtij[:,dikes[i][1]:]
-                    dat_brut_field = dat_trmoy[:,dikes[i][1]:]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i][1]:]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:]
                 else:
                     field = costeta_mat[:,dikes[i][1]:dikes[i+1][0]]
                     Cij_field = Cij[:,dikes[i][1]:dikes[i+1][0]]
                     twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
-                    dat_brut_field = dat_trmoy[:,dikes[i][1]:dikes[i+1][0]]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i][1]:dikes[i+1][0]]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
 
                 # Horizons detection
@@ -348,13 +349,13 @@ for fich in file_list[1:28] + file_list[33:]:
                     field = costeta_mat[:,:dikes[i][0]]
                     Cij_field = Cij[:,:dikes[i][0]]
                     twtij_field = twtij[:,:dikes[i][0]]
-                    dat_brut_field = dat_trmoy[:,:dikes[i][0]]
+                    dat_brut_field = dat_filtreSVD[:,:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][:dikes[i][0]]
                 else:
                     field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
                     Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
                     twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
-                    dat_brut_field = dat_trmoy[:,dikes[i-1][1]:dikes[i][0]]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i-1][1]:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
 
                 # Horizons detection   
@@ -419,19 +420,19 @@ for fich in file_list[1:28] + file_list[33:]:
                     field = costeta_mat[:,:dikes[i][0]]
                     Cij_field = Cij[:,:dikes[i][0]]
                     twtij_field = twtij[:,:dikes[i][0]]
-                    dat_brut_field = dat_trmoy[:,:dikes[i][0]]
+                    dat_brut_field = dat_filtreSVD[:,:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][:dikes[i][0]]
                 if i == len(dikes)-1:
                     field = costeta_mat[:,dikes[i][1]:]
                     Cij_field = Cij[:,dikes[i][1]:]
                     twtij_field = twtij[:,dikes[i][1]:]
-                    dat_brut_field = dat_trmoy[:,dikes[i][1]:]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i][1]:]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:]
                 else:
                     field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
                     Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
                     twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
-                    dat_brut_field = dat_trmoy[:,dikes[i-1][1]:dikes[i][0]]
+                    dat_brut_field = dat_filtreSVD[:,dikes[i-1][1]:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
 
                 # Horizons detection
