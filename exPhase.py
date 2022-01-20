@@ -55,7 +55,7 @@ list_samp_min = []
 
 # Problems with files 0 and 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[3:5]:
+for fich in file_list[3:4]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -300,8 +300,10 @@ for fich in file_list[3:5]:
                 # Filters horizons by sign and by length to detect the soil/ice surface. This surface is supposed to be longest and to be early on the radargram
                 # Keeps only the horizons of positive sign
                 sign_hpt = [longer_hpt[i] for k in range(len(signs)) if signs[k] > 0]
+                print(len(sign_hpt))
                 # Keeps only the horizons with a length at least equal to half the field
                 long_reflect = [hori for hori in sign_hpt if len(hori) > (field.shape[1]/2)]
+                print(len(long_reflect))
                 list_mean = []
                 # Of the remaining horizons, we keep the one that comes the earliest
                 for reflect in long_reflect:

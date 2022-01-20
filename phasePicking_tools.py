@@ -262,7 +262,7 @@ def horipick(Cij,twtij,Tph,tol_C,tolmin_t,tolmax_t,h_offset=0,min_time=6):
 
     return list_horizons, list_horizons_offs, Cij_clone, twtij_clone, list_signs
 
-def horijoin(horizons,Cij_clone,twtij_clone,Lg=False,Tj=False,section=0):
+def horijoin(horizons,Cij_clone,twtij_clone,section=None,Lg=False,Tj=False,):
     """
     Function that takes the output of the function horipick and joins close horizons together following some conditions.
     1. Same polarity
@@ -408,78 +408,72 @@ def horijoin(horizons,Cij_clone,twtij_clone,Lg=False,Tj=False,section=0):
             # Initialization of the final list to the left of the current horizon
             left = []
             if len(pre_left) > 0:
-                #if section is None:
-                #    for i in range(len(pre_left)):
-                #        # Checks if the potential jonction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
-                #        x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
-                #        # Adds the horizons to the "left" list if no crossing
-                #        if not np.any(x_bool):
-                #                left.append(pre_left[i])
-                #else:
-                for i in range(len(pre_left)):
-                    # Checks if the potential junction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
-                    x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
-
-                    # Adds the horizons to the "left" list if no crossing - Remove if using Phase crossing
-                    if not np.any(x_bool):
-                        left.append(pre_left[i])
-                    
-                    """"
-                    # Phase crossing - To verify
-                    ec_trace = hori_combine[0][1]-horizons_tri[pre_left[i]][-1][1]
-                    ec_samp = hori_combine[0][0]-horizons_tri[pre_left[i]][-1][0]
-                    pythg = np.sqrt(ec_trace**2 + ec_samp**2)
-                    
-                    # Verify this line    
-                    if (pythg > 52) and (ec_samp > 3):
-                        prop = cross_phase(signe,pre_left[i],hori_combine_t,time_hori,champ,direction="left")
-                        if (not np.any(x_bool)) and (prop < 0.25):
-                            left.append(pre_left[i])
-                    # Verify this
-                    elif (pythg > 152):
-                        if (not np.any(x_bool)) and (prop < 0.75):
-                            left.append(pre_left[i])
-                    else:
+                if section is None:
+                    for i in range(len(pre_left)):
+                        # Checks if the potential jonction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
+                        x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
+                        # Adds the horizons to the "left" list if no crossing
                         if not np.any(x_bool):
-                            left.append(pre_left[i])
-                    """
+                                left.append(pre_left[i])
+                else:
+                    for i in range(len(pre_left)):
+                        # Checks if the potential junction between an horizon to the left and the current horizon crosses an existing horizon - See cross_horizon (next function)
+                        x_bool = cross_horijoin(pre_left[i],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="left")
+
+                        # This part of the code is very specific to this problem and needs reviewing
+                        # First, it calculates the spacing between 2 horizons using Pythagore
+                        spac_trace = hori_combine[0][1]-horizons_tri[pre_left[i]][-1][1]
+                        spac_samp = hori_combine[0][0]-horizons_tri[pre_left[i]][-1][0]
+                        pythg = np.sqrt(spac_trace**2 + spac_samp**2)
+
+                        # Then it analyses the form of the potential junction
+                        # For a junction of great length with a big proportion in the vertical direction, it checks if there is phase crossing (so basically if it crosses a horizontal phase of opposite sign)
+                        # The threshold needs a better definition
+                        if (pythg > 52) and (spac_samp > 3):
+                            prop = cross_phase(signe,pre_left[i],hori_combine_t,time_hori,section,direction="left")
+                            # Since the reflectors are usually flat, it's often not a good thing if we cross a horizontal phase of opposite sign. Therefore, if 25% or more of the junction covers a phase of opposite signs, we don't do the junction.
+                            if (not np.any(x_bool)) and (prop < 0.25):
+                                left.append(pre_left[i])
+                        # For long junction with a big proportion of its length in the horizontal direction
+                        elif (pythg > 152):
+                            # When a potential junction mainly horizontal crosses a some traces of opposite signs, it is often because of diffraction or noise. Therfore, the tolerance is bigger (75%). 
+                            if (not np.any(x_bool)) and (prop < 0.75):
+                                left.append(pre_left[i])
+                        else:
+                            if not np.any(x_bool):
+                                left.append(pre_left[i])
+                    
             # Right
             # Initialization of the final list to the right of the current horizon
             right = []
             if len(pre_right) > 0:
-                #if champ is None:
-                #    for j in range(len(pre_right)):
-                #        x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,newlist_horizons_time,direction="right")
-                #        if not np.any(x_bool):
-                #                right.append(pre_right[j])
-                #else:
-                for j in range(len(pre_right)):
-                    x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="right")
+                if section is None:
+                    for j in range(len(pre_right)):
+                        x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="right")
+                        if not np.any(x_bool):
+                                right.append(pre_right[j])
+                else:
+                    for j in range(len(pre_right)):
+                        x_bool = cross_horijoin(pre_right[j],hori_combine_t,horizons_tri,time_hori,new_horizons_t,direction="right")
 
-                    # Adds the horizons to the "right" list if no crossing - Remove if using Phase crossing
-                    if not np.any(x_bool):
-                        left.append(pre_right[j])
+                        spac_trace = horizons_tri[pre_right[j]][0][1] - hori_combine[-1][1]
+                        spac_samp = time_hori[pre_right[j]][0][0] - hori_combine_t[-1][0]
+                        pythg = np.sqrt(spac_trace**2 + spac_samp**2)
 
-                    """
-                    Phase crossing - To verify
-                    ec_trace = horizons_tri[pre_right[j]][0][1] - hori_combine[-1][1]
-                    ec_samp = time_hori[pre_right[j]][0][0] - hori_combine_t[-1][0]
-                    pythg = np.sqrt(ec_trace**2 + ec_samp**2)
-
-                    if (pythg > 52) and (ec_samp > 3):
-                        prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,champ,direction="right")
-                        if (not np.any(x_bool)) and (prop < 0.25):
-                            right.append(pre_right[j])
+                        if (pythg > 52) and (spac_samp > 3):
+                            prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,section,direction="right")
+                            if (not np.any(x_bool)) and (prop < 0.25):
+                                right.append(pre_right[j])
 
                         elif (pythg > 152):
-                            prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,champ,direction="right")
+                            prop = cross_phase(signe,pre_right[j],hori_combine_t,time_hori,section,direction="right")
                             if (not np.any(x_bool)) and (prop < 0.75):
                                 right.append(pre_right[j])
 
                         else:
                             if not np.any(x_bool):
                                 right.append(pre_right[j])
-                    """
+                        
             # For each side, only keep the closest horizon (2 axes)
             # Left
             if len(left) > 1:
@@ -728,7 +722,49 @@ def cross_horijoin(junction,current_hori,horizons,hori_t,new_horit,direction="le
                 xbool.append(False)
                 
         return xbool
+
+def cross_phase(sign,junction,curr_horizon_t,horizons_t,section,direction="left"):
+    """
+    Function to check if a potential junction crosses a phase of opposed polarity. For example, if horipick() selects 2 horizons of positive sign separated by 100 traces in wich there is a large proportion of negative values, the junction will not be formed even if there is no pre-existing horizons between the 2 that could be joined.
     
+    INPUT:
+    - sign: Polarity or sign of the horizon currently analysed
+    - junction: Potential junction between the current horizon and 1 horizon to the left or the right
+    - curr_horizon_t: For horijoin(), use hori_combine_t 
+    - horizons_t: Values of twtij associated to the positions of a list of horizon. For horijoin(), use time_hori
+    - section: Section pf the total field currently analysed
+    - direction: Direction in wich the potential junction could be made (from the current horizon)
+
+    OUTPUT:
+    - prop_opp: Proportion of values of opposite sign covered by the potential junction
+    """
+    # Interpolates at every trace on the potential junction
+    if direction == "left":
+        fa = interpolate.interp1d([horizons_t[junction][-1][1],curr_horizon_t[0][1]],[horizons_t[junction][-1][0],curr_horizon_t[0][0]],kind='linear')
+        xa = np.linspace(horizons_t[junction][-1][1],curr_horizon_t[0][1],((curr_horizon_t[0][1]-horizons_t[junction][-1][1]))+1)
+        new_a = fa(xa)
+    elif direction == "right":
+        fa = interpolate.interp1d([curr_horizon_t[-1][1],horizons_t[junction][0][1]],[curr_horizon_t[-1][0],horizons_t[junction][0][0]],kind='linear')
+        xa = np.linspace(curr_horizon_t[-1][1],horizons_t[junction][0][1],((horizons_t[junction][0][1]-curr_horizon_t[-1][1]))+1)
+        new_a = fa(xa)
+    
+    # Transforms new_a in rounded integers
+    new_a = np.round(new_a).astype("int")
+    xa = xa.astype("int")
+    # Finds corresponding amplitudes in C_clone
+    amp_joint = []
+    for i in range(len(xa)):
+        amp_joint.append(section[new_a[i]][xa[i]])
+
+    # Finds the proportion of values of opposite sign
+    amp_joint = np.asarray(amp_joint)
+    sign_joint = (amp_joint > 0).tolist()
+    if sign > 0:
+        prop_opp = sign_joint.count(0)/len(sign_joint)
+    elif sign < 0:
+        prop_opp = sign_joint.count(1)/len(sign_joint)
+    return prop_opp
+
 def pick_dike(dike_case,iteration,dikes,Cij,twtij,Tph,ice,len_min=5,tol_C=0.1,tolmin_t=0.6,tolmax_t=2,Lg=50,Tj=7):
     """
     Function to complete phase picking on dikes (Short intervals of traces (constant widths) with steep reflectors). This function is written specifically for the cranberry fields I am studying.
