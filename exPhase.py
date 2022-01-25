@@ -55,7 +55,7 @@ list_samp_min = []
 
 # Problems with files 0 and 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[3:4]:
+for fich in file_list[1:7]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -147,7 +147,7 @@ for fich in file_list[3:4]:
     # Finds the width from the first phase
     Tph = seqs[0][1] - seqs[0][0]
     # Removes data that are above air wave,except for 5 samples
-    dat = dat[big_val[0][0]-5:,:]
+    dat = dat[big_val[0][0]-5:100,:]
 
     # Dewow and air waves removal from data
     dat = bp.deWOW(dat,18)
@@ -201,6 +201,8 @@ for fich in file_list[3:4]:
                     # Isolates the portion of original GPR data that is associated with the field
                     dat_brut_field = dat_filtreSVD[:,dikes[0][1]:dikes[-1][0]]
                     GPS_field = GPS_corr[:,2][dikes[0][1]:dikes[-1][0]]
+                    # Horizons detection
+                    hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
 
                 # If there is more than 2 dikes
                 else:
@@ -210,9 +212,9 @@ for fich in file_list[3:4]:
                     twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
                     dat_brut_field = dat_filtreSVD[:,dikes[i][1]:dikes[i+1][0]]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
+                    # Horizons detection
+                    hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
 
-                # Horizons detection
-                hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -282,15 +284,17 @@ for fich in file_list[3:4]:
                     twtij_field = twtij[:,dikes[i][1]:]
                     dat_brut_field = dat_filtreSVD[:,dikes[i][1]:]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:]
+                    # Horizons detection
+                    hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 else:
                     field = costeta_mat[:,dikes[i][1]:dikes[i+1][0]]
                     Cij_field = Cij[:,dikes[i][1]:dikes[i+1][0]]
                     twtij_field = twtij[:,dikes[i][1]:dikes[i+1][0]]
                     dat_brut_field = dat_filtreSVD[:,dikes[i][1]:dikes[i+1][0]]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:dikes[i+1][0]]
+                    # Horizons detection
+                    hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
 
-                # Horizons detection
-                hp, hp_tp, C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -353,20 +357,38 @@ for fich in file_list[3:4]:
                     twtij_field = twtij[:,:dikes[i][0]]
                     dat_brut_field = dat_filtreSVD[:,:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][:dikes[i][0]]
+                    # Horizons detection   
+                    hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 else:
                     field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
                     Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
                     twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
                     dat_brut_field = dat_filtreSVD[:,dikes[i-1][1]:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
+                    # Horizons detection   
+                    hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
 
-                # Horizons detection   
-                hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too small
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
                 # Horizons junctions
                 longer_hp, longer_hpt, signs = phaseTools.horijoin(long_hp,C_clone,t_clone,Lg=200,Tj=5)
+
+                # Display of horizons
+                #fig = plt.figure(figsize=(10, 6))
+                #ax = fig.add_subplot(211)
+                #ax.set_title("GPR data after basic processing")
+                #maxi = 1
+                #mini = -1
+                #plt.imshow(field, cmap='bwr', vmin=mini, vmax=maxi)
+                #for hori in range(len(longer_hpt)):
+                #    samp = [i[0] for i in longer_hpt[hori]]
+                #    traces = [j[1] for j in longer_hpt[hori]]
+                #    plt.plot(traces,samp,'.-k',MarkerSize=1,LineWidth=1)
+                #ax.set_aspect(8)
+                #plt.xlabel("Traces")
+                #plt.ylabel("Samples")
+                #plt.show()
 
                 # Filters horizons by sign and by length to detect the soil/ice surface. This surface is supposed to be longest and to be early on the radargram
                 # Keeps only the horizons of positive sign
@@ -377,6 +399,7 @@ for fich in file_list[3:4]:
                 # Of the remaining horizons, we keep the one that comes the earliest
                 for reflect in long_reflect:
                     list_mean.append(np.mean([ref[0] for ref in reflect]))
+                print(list_mean)
                 ice_cold = np.where(list_mean == np.min(list_mean))[0]
                 
                 # For the horizon associated with soil/ice surface, we interpolate so that every trace gets a picked coordinate
@@ -424,21 +447,22 @@ for fich in file_list[3:4]:
                     twtij_field = twtij[:,:dikes[i][0]]
                     dat_brut_field = dat_filtreSVD[:,:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][:dikes[i][0]]
+                    hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 if i == len(dikes)-1:
                     field = costeta_mat[:,dikes[i][1]:]
                     Cij_field = Cij[:,dikes[i][1]:]
                     twtij_field = twtij[:,dikes[i][1]:]
                     dat_brut_field = dat_filtreSVD[:,dikes[i][1]:]
                     GPS_field = GPS_corr[:,2][dikes[i][1]:]
+                    hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 else:
                     field = costeta_mat[:,dikes[i-1][1]:dikes[i][0]]
                     Cij_field = Cij[:,dikes[i-1][1]:dikes[i][0]]
                     twtij_field = twtij[:,dikes[i-1][1]:dikes[i][0]]
                     dat_brut_field = dat_filtreSVD[:,dikes[i-1][1]:dikes[i][0]]
                     GPS_field = GPS_corr[:,2][dikes[i-1][1]:dikes[i][0]]
+                    hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
 
-                # Horizons detection
-                hp, hp_tp,C_clone, t_clone, nosign = phaseTools.horipick(Cij_field,twtij_field,Tph,tol_C=0.1,tolmin_t=0.6,tolmax_t=2)
                 # Removal of horizons that are too short
                 min_length = 25
                 long_hp = [hori for hori in hp if len(hori) > min_length]
@@ -504,6 +528,7 @@ for fich in file_list[3:4]:
     maxi = 8192
     mini = -8192
     plt.imshow(dat_copy, cmap='bwr', vmin=mini, vmax=maxi)
+    plt.plot(x_tot,totliss,"-g")
     ax.set_aspect(8)
     plt.xlabel("Traces")
     plt.ylabel("Samples")
@@ -523,6 +548,7 @@ for fich in file_list[3:4]:
     #########################################################################################################
 
     outfile = "/Users/Samuel/Documents/École/Université/Maitrise/St-Louis/GPR_vtk/G{}-F{}".format(gridno[8:],fich_nom[24:])
+    print("G{}-F{}".format(gridno[8:],fich_nom[24:]))
 
     # Only keeps GPS positions associated with the soil/ice surface
     positions = GPS_corr[int(x_tot[0]):int(x_tot[-1])+1,:]
@@ -561,8 +587,15 @@ for fich in file_list[3:4]:
     del twtij_field
     del dat_brut_field
     del GPS_field
+    del dat_filtreSVD
     del C_clone
     del t_clone
+    del x_dike
+    del new_dike
+    del head
+    del nosign
+    del ice_cold
+    del mov_av
 
     # Exports processed data to .vts file -> You can open it in Paraview (You can also open every vts files in the same Paraview window)
     bp.exportVTK(outfile,posx,newtwtt,newdata_res,positions)
