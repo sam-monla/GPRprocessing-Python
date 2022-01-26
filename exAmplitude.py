@@ -41,8 +41,9 @@ invent_hori = {}
 vertical_list = []
 
 # Iteration on every file
-# Problems with files 0,27,31
-for file in file_list[1:5]:
+# This code doesn't deal with vertical (North/South directions) lines
+for file in file_list[1:31]:
+    print(file)
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
