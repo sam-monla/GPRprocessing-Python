@@ -12,6 +12,7 @@ Bad coding
 import numpy as np
 from scipy import linalg
 from scipy import interpolate
+from tqdm import tqdm
 
 def prel_picking(data,dikes,header,samp_max):
     """
@@ -46,7 +47,7 @@ def prel_picking(data,dikes,header,samp_max):
     # SVD method for air waves removal (could be used to reduce noise)
     # The method is applied on each field (between the dikes) individually. At the end of each iteration, the picked coordinates are added to a dictionnary
     # See quick_SVD() in basic_proc.py for more details about the SVD method
-    for i in range(len(dikes)+1):
+    for i in tqdm(range(len(dikes)+1)):
         if i == 0:
             # Approximate dike width: 600 traces
             # If the dike is at the very beginning, skip to the next
@@ -60,9 +61,13 @@ def prel_picking(data,dikes,header,samp_max):
 
         # For the last dike
         elif i == len(dikes):
-            # Apply the method from the end of the last dike to the end of the radargram
-            U, D, V = linalg.svd(data[:samp_max,dikes[i-1][1]:])
-            reste = np.zeros((samp_max, ntraces-dikes[i-1][1]-samp_max))
+            # If the dike is at the very end,skip it
+            if (dikes[i-1][0]) >= (data.shape[1]-500):
+                break
+            else:
+                # Apply the method from the end of the last dike to the end of the radargram
+                U, D, V = linalg.svd(data[:samp_max,dikes[i-1][1]:])
+                reste = np.zeros((samp_max, ntraces-dikes[i-1][1]-samp_max))
         
         else:
             # Apply the method from the end of the last dike to the beginning of the current one
@@ -104,7 +109,7 @@ def prel_picking(data,dikes,header,samp_max):
         del d
         del reconstruct
 
-    return res_pick, res_pick_brut, recon
+    return res_pick, res_pick_brut, recon, deb_dig
 
 def hori_smooth(win,scale,pick_data,degree=1):
     """
@@ -241,8 +246,8 @@ def final_picking(smooth_surf, lim, data, ntraces, header, start):
     pick2 = (np.stack(pick2)).T
     lines = pick2.tolist()
     # Picking
-    colnorm = conv_col_norm(lines, norm=True, norm_comp=False)
-    cx, cy, cx_brut, cy_brut = basic_picker(colnorm, 0.4, start, ntraces, header["ns_per_zsample"]*1e9, header["sec"], dec_temp=mat_ind[0])
+    colnorm = conv_col_norm(lines, norm=True)
+    cx, cy, cx_brut, cy_brut = basic_picker(colnorm, 0.4, start, ntraces, header["ns_per_zsample"]*1e9, header["sec"],temp_shift=mat_ind[0])
 
     return cx, cy, cx_brut, cy_brut
 
@@ -263,7 +268,7 @@ def conv_col_norm(list_lines, norm=True):
             col.append(float(ligne_Cut[column]))
         liste_col.append(col)
     if norm:
-        liste_colonnes_norm = []
+        liste_col_norm = []
         for colonne in liste_col:
             maxi = max(colonne)
             if maxi == 0:
@@ -271,8 +276,8 @@ def conv_col_norm(list_lines, norm=True):
             col_norm = []
             for elem_norm in colonne:
                 col_norm.append(elem_norm/maxi)
-            liste_col.append(col_norm)
-        return liste_col
+            liste_col_norm.append(col_norm)
+        return liste_col_norm
     else:
         return liste_col
 
