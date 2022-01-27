@@ -53,9 +53,9 @@ list_samp_min = []
 ### - Iteration over file_list (GPR_data) - #################################################################
 #############################################################################################################
 
-# Problems with files 0 and 28 to 32
+# Problems with files 0, 6, 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[1:7]:
+for fich in file_list[29:31]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
