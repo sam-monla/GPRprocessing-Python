@@ -96,6 +96,8 @@ for file in file_list[1:31]:
     # Removing of empty traces
     start_tr, end_tr = bp.rem_empty(dat)
     dat = dat[:,start_tr:end_tr]
+    # Dewow
+    dat = bp.deWOW(dat,18)
     # Saves a copy of the original matrix before processing
     dat_copy = np.copy(dat)
     # Removes empty traces from GPS data
