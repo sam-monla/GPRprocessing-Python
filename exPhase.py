@@ -55,7 +55,7 @@ list_samp_min = []
 
 # Problems with files 0, 6, 28 to 32
 #for fich in file_list[1:28] + file_list[33:]:
-for fich in file_list[29:31]:
+for fich in file_list[1:2]:
     # Finds wich DZT file are aquired in Grid mode. The GPR as a grid mode in wich the radargrams are always put in the same direction regardless of the direction of the equipement. 
 
     # The DZT files are grouped in grids. The following lines find wich of the files are taken from the same grid
@@ -524,24 +524,25 @@ for fich in file_list[29:31]:
 
     fig = plt.figure(figsize=(10, 6))
     ax = fig.add_subplot(211)
-    ax.set_title("GPR data after basic processing")
+    ax.set_title("Avant la correction topographique")
     maxi = 8192
     mini = -8192
     plt.imshow(dat_copy, cmap='bwr', vmin=mini, vmax=maxi)
-    plt.plot(x_tot,totliss,"-g")
+    #plt.plot(x_tot,totliss,"-g")
     ax.set_aspect(8)
     plt.xlabel("Traces")
-    plt.ylabel("Samples")
+    plt.ylabel("Échantillons")
 
     ax = fig.add_subplot(212)
-    ax.set_title("Correction for snow layer")
+    ax.set_title("Après la correction topographique")
     maxi = 8192
     mini = -8192
     plt.imshow(newdata_res, cmap='bwr', vmin=mini, vmax=maxi)
-    plt.plot(GPS_final,"-k")
+    #plt.plot(GPS_final,"-k")
     ax.set_aspect(8)
     plt.xlabel("Traces")
-    plt.ylabel("Samples")
+    plt.ylabel("Échantillons")
+    plt.tight_layout()
     plt.show()
 
     ### - Create a .vts file to open in Paraview - ##########################################################
@@ -712,23 +713,23 @@ for fichN in vertical_list:
 
     fig = plt.figure(figsize=(10, 6))
     ax = fig.add_subplot(211)
-    ax.set_title("GPR data after basic processing")
+    ax.set_title("Avant la correction topographique")
     maxi = 8192
     mini = -8192
     plt.imshow(dat_copy, cmap='bwr', vmin=mini, vmax=maxi)
     ax.set_aspect(8)
     plt.xlabel("Traces")
-    plt.ylabel("Samples")
+    plt.ylabel("Échantillons")
 
     ax = fig.add_subplot(212)
-    ax.set_title("Correction for snow layer")
+    ax.set_title("Après la correction topographique")
     maxi = 8192
     mini = -8192
     plt.imshow(newdata_res, cmap='bwr', vmin=mini, vmax=maxi)
     plt.plot(GPS_final,"-k")
     ax.set_aspect(8)
     plt.xlabel("Traces")
-    plt.ylabel("Samples")
+    plt.ylabel("Échantillons")
     #plt.show()
 
     ### - Create a .vts file to open in Paraview - ##########################################################
